@@ -609,7 +609,8 @@ export default {
 
   modelPricing: {
     title: 'Model Pricing',
-    pricingRule: 'Pricing rule: official price template $1 = {symbol}{rate}. Prices are per 1M tokens, with group rate applied.',
+    ruleTitle: 'Pricing rule',
+    pricingRule: 'Official prices are shown at $1 = {symbol}{rate}. Group price = official price × group rate × top-up rate ({symbol}{recharge} paid per $1 of balance). All prices are per 1M tokens.',
     empty: 'No models available',
     searchPlaceholder: 'Search models',
     loadFailed: 'Failed to load',
@@ -618,6 +619,9 @@ export default {
     subscriptionGroup: 'Subscription group',
     perRequest: 'request',
     discount: '{n}x off',
+    groupPrice: 'Group price',
+    officialPrice: 'Official price',
+    contextLength: 'Context length',
     columns: {
       model: 'Model',
       input: 'Input',

@@ -4,13 +4,21 @@
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ t('modelPricing.title') }}</h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {{ t('modelPricing.pricingRule', { symbol: currencySymbol, rate: fmtNum(cnyPerUsd) }) }}
-          </p>
         </div>
         <button class="btn btn-secondary" :disabled="loading" @click="load">
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </button>
+      </div>
+
+      <div
+        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+      >
+        <span class="font-semibold">{{ t('modelPricing.ruleTitle') }}</span>
+        {{ t('modelPricing.pricingRule', {
+          symbol: currencySymbol,
+          rate: fmtNum(cnyPerUsd),
+          recharge: fmtNum(cnyPerBalanceUsd),
+        }) }}
       </div>
 
       <div v-if="loading && platforms.length === 0" class="flex justify-center py-20">
@@ -21,48 +29,67 @@
       </div>
 
       <template v-else>
-        <!-- 平台标签 -->
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="p in platforms"
-            :key="p.platform"
-            :class="[
-              'rounded-full border px-4 py-1.5 text-sm font-medium transition-colors',
-              p.platform === activePlatform
-                ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-dark-600 dark:text-gray-300',
-            ]"
-            @click="selectPlatform(p.platform)"
-          >
-            {{ platformLabel(p.platform) }}
-          </button>
+        <!-- 平台标签 + 价格口径 -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="p in platforms"
+              :key="p.platform"
+              :class="[
+                'rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+                p.platform === activePlatform
+                  ? 'border-primary-500 bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-dark-600 dark:text-gray-300',
+              ]"
+              @click="selectPlatform(p.platform)"
+            >
+              {{ platformLabel(p.platform) }}
+            </button>
+          </div>
+          <div class="flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-dark-600 dark:bg-dark-800">
+            <button
+              v-for="mode in (['group', 'official'] as const)"
+              :key="mode"
+              :class="[
+                'rounded-md px-3 py-1 text-xs font-medium',
+                priceMode === mode ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-300',
+              ]"
+              @click="priceMode = mode"
+            >
+              {{ t(mode === 'group' ? 'modelPricing.groupPrice' : 'modelPricing.officialPrice') }}
+            </button>
+          </div>
         </div>
 
         <!-- 分组卡片 -->
-        <div v-if="current" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div v-if="current" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <button
             v-for="g in current.groups"
             :key="g.id"
             :class="[
-              'rounded-2xl border bg-white p-4 text-left transition-all hover:shadow-md dark:bg-dark-800',
+              'relative rounded-xl border bg-white px-4 py-3 text-left transition-all hover:shadow-md dark:bg-dark-800',
               g.id === activeGroupId
                 ? 'border-primary-500 ring-1 ring-primary-500'
                 : 'border-gray-200 dark:border-dark-700',
             ]"
             @click="activeGroupId = g.id"
           >
-            <div class="flex items-start justify-between gap-2">
-              <span class="font-semibold text-gray-900 dark:text-white">{{ g.name }}</span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white">
+                {{ g.name }}
+                <Icon v-if="g.id === activeGroupId" name="checkCircle" size="sm" class="text-primary-500" />
+              </span>
               <span
-                v-if="rateOf(g) < 1"
-                class="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-300"
+                v-if="discountRatio(g) < 1"
+                class="rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-semibold text-green-600 dark:bg-green-500/10 dark:text-green-300"
               >
-                {{ discountLabel(rateOf(g)) }}
+                {{ discountLabel(discountRatio(g)) }}
               </span>
             </div>
-            <div class="mt-3 text-xs text-gray-400 dark:text-dark-500">{{ t('modelPricing.rate') }}</div>
-            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">×{{ fmtNum(rateOf(g)) }}</div>
-            <div v-if="g.subscription_type === 'subscription'" class="mt-1 text-xs text-gray-500">{{ t('modelPricing.subscriptionGroup') }}</div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('modelPricing.rate') }} ×{{ fmtNum(rateOf(g)) }}
+              <span v-if="g.subscription_type === 'subscription'" class="ml-1">· {{ t('modelPricing.subscriptionGroup') }}</span>
+            </div>
           </button>
         </div>
 
@@ -73,18 +100,21 @@
               <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input v-model="query" type="text" :placeholder="t('modelPricing.searchPlaceholder')" class="input pl-10" />
             </div>
-            <div v-if="tierLabels.length > 1" class="flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
-              <button
-                v-for="(label, i) in tierLabels"
-                :key="label"
-                :class="[
-                  'rounded-md px-3 py-1 text-xs font-medium',
-                  i === tierIndex ? 'bg-white shadow dark:bg-dark-600 dark:text-white' : 'text-gray-500',
-                ]"
-                @click="tierIndex = i"
-              >
-                {{ label }}
-              </button>
+            <div v-if="tierLabels.length > 1" class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>{{ t('modelPricing.contextLength') }}</span>
+              <div class="flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-600">
+                <button
+                  v-for="(label, i) in tierLabels"
+                  :key="label"
+                  :class="[
+                    'rounded-md px-3 py-1 text-xs font-medium',
+                    i === tierIndex ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-500',
+                  ]"
+                  @click="tierIndex = i"
+                >
+                  {{ label }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -118,10 +148,20 @@
                   </template>
                   <template v-else>
                     <td v-for="k in priceKeys" :key="k" class="px-4 py-3 text-right">
-                      <div class="font-semibold text-gray-900 dark:text-white">{{ money(r.price[k]) }}</div>
-                      <div v-if="r.saving > 0 && r.official[k] != null" class="text-xs text-gray-400 line-through">
+                      <div v-if="priceMode === 'official'" class="font-semibold text-gray-900 dark:text-white">
                         {{ money(r.official[k]) }}
+                        <span class="text-xs font-normal text-gray-400">/ 1M tokens</span>
                       </div>
+                      <template v-else>
+                        <div class="font-semibold text-gray-900 dark:text-white">
+                          {{ money(r.price[k]) }}
+                          <span class="text-xs font-normal text-gray-400">/ 1M tokens</span>
+                        </div>
+                        <div v-if="r.saving > 0 && r.official[k] != null" class="text-xs text-gray-400">
+                          {{ t('modelPricing.officialPrice') }}
+                          <span class="line-through">{{ money(r.official[k]) }}</span>
+                        </div>
+                      </template>
                     </td>
                   </template>
                   <td class="px-4 py-3 text-right">
@@ -160,9 +200,17 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { resolveIntervalPrices } from '@/utils/pricing'
 import { platformLabel } from '@/utils/platformColors'
+import {
+  discountRatio as calcDiscountRatio,
+  groupPrice,
+  normalizePricingRates,
+  type PricingRates,
+} from '@/utils/modelPricingMath'
 
-// 汇率取后台「支付设置 → 订阅 USD→CNY 汇率」;未配置(0)时按 1 计。
-const cnyPerUsd = ref(1)
+// 官方价展示汇率取后台「支付设置 → 订阅 USD→CNY 汇率」;每 $1 余额实付人民币 = 1 / 「余额充值倍率」;未配置均按 1 计。
+const pricingRates = ref<PricingRates>({ cnyPerUsd: 1, cnyPerBalanceUsd: 1 })
+const cnyPerUsd = computed(() => pricingRates.value.cnyPerUsd)
+const cnyPerBalanceUsd = computed(() => pricingRates.value.cnyPerBalanceUsd)
 const currencySymbol = '¥'
 const PER_MILLION = 1_000_000
 
@@ -186,6 +234,7 @@ const query = ref('')
 const activePlatform = ref('')
 const activeGroupId = ref<number | null>(null)
 const tierIndex = ref(0)
+const priceMode = ref<'group' | 'official'>('group')
 
 const platforms = computed<PlatformBucket[]>(() => {
   const map = new Map<string, PlatformBucket>()
@@ -208,6 +257,11 @@ const activeGroup = computed(() => current.value?.groups.find((g) => g.id === ac
 
 function rateOf(g: UserAvailableGroup): number {
   return userRates.value[g.id] ?? g.rate_multiplier ?? 1
+}
+
+// 实付价 / 官方展示价:分组倍率 × 每 $1 余额的实付人民币 ÷ 官方展示汇率
+function discountRatio(g: UserAvailableGroup): number {
+  return calcDiscountRatio(rateOf(g), pricingRates.value)
 }
 
 function selectPlatform(p: string) {
@@ -248,6 +302,7 @@ const rows = computed<Row[]>(() => {
   const g = activeGroup.value
   if (!g || !current.value) return []
   const rate = rateOf(g)
+  const ratio = discountRatio(g)
   const q = query.value.trim().toLowerCase()
   const out: Row[] = []
   for (const m of current.value.models) {
@@ -269,14 +324,17 @@ const rows = computed<Row[]>(() => {
       cacheRead: usd(src.cache_read_price),
     }
     const price = {} as Prices
-    for (const k of priceKeys) price[k] = official[k] == null ? null : official[k]! * rate
+    for (const k of priceKeys) {
+      price[k] = official[k] == null ? null : groupPrice(official[k]! / cnyPerUsd.value, rate, pricingRates.value)
+    }
     const per = src.per_request_price ?? p.per_request_price
     out.push({
       name: m.name,
-      perRequest: p.billing_mode === 'per_request' && per != null ? per * cnyPerUsd.value * rate : null,
+      perRequest:
+        p.billing_mode === 'per_request' && per != null ? groupPrice(per, rate, pricingRates.value) : null,
       price,
       official,
-      saving: rate < 1 ? Math.round((1 - rate) * 100) : 0,
+      saving: ratio < 1 ? Math.round((1 - ratio) * 100) : 0,
     })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
@@ -306,15 +364,16 @@ async function load() {
   try {
     const [list, rates, rate] = await Promise.all([
       userChannelsAPI.getAvailable(),
-      userGroupsAPI.getUserGroupRates().catch(() => ({}) as Record<number, number>),
-      paymentAPI
-        .getCheckoutInfo()
-        .then((res) => Number(res.data.subscription_usd_to_cny_rate) || 1)
-        .catch(() => 1),
+      userGroupsAPI.getUserGroupRates(),
+      // 专属倍率或汇率取不到时不能用默认值展示价格(会把错价展示给用户),让整体加载失败并提示重试
+      paymentAPI.getCheckoutInfo().then((res) => res.data),
     ])
     channels.value = list
     userRates.value = rates
-    cnyPerUsd.value = rate
+    pricingRates.value = normalizePricingRates(
+      rate.subscription_usd_to_cny_rate,
+      rate.balance_recharge_multiplier,
+    )
     if (import.meta.env.DEV && route.query.mock === '1') {
       channels.value = (await import('@/dev/previewMock')).mockChannels
     }

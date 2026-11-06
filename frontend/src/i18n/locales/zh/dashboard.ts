@@ -614,7 +614,8 @@ export default {
 
   modelPricing: {
     title: '模型价格',
-    pricingRule: '计价规则:官方价格模板 $1 = {symbol}{rate},以下为每 1M tokens 价格,已按分组倍率折算。',
+    ruleTitle: '计价规则',
+    pricingRule: '官方价格按 $1 = {symbol}{rate} 折算,分组价格 = 官方价格 × 分组倍率 × 充值汇率(每 $1 余额实付 {symbol}{recharge})。价格均为每 1M tokens。',
     empty: '暂无可用模型',
     searchPlaceholder: '搜索模型',
     loadFailed: '加载失败',
@@ -623,6 +624,9 @@ export default {
     subscriptionGroup: '订阅分组',
     perRequest: '次',
     discount: '{n}折',
+    groupPrice: '分组价格',
+    officialPrice: '官方价格',
+    contextLength: '上下文长度',
     columns: {
       model: '模型',
       input: '输入',
