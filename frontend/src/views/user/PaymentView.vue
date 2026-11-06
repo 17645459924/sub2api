@@ -1166,6 +1166,10 @@ onMounted(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
+    if (import.meta.env.DEV && route.query.mock === '1') {
+      const { mockPlans } = await import('@/dev/previewMock')
+      checkout.value = { ...checkout.value, plans: mockPlans }
+    }
     if (enabledMethods.value.length) {
       const order: readonly string[] = METHOD_ORDER
       const sorted = [...enabledMethods.value].sort((a, b) => {

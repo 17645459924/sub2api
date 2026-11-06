@@ -612,6 +612,27 @@ export default {
     }
   },
 
+  modelPricing: {
+    title: '模型价格',
+    pricingRule: '计价规则:官方价格模板 $1 = {symbol}{rate},以下为每 1M tokens 价格,已按分组倍率折算。',
+    empty: '暂无可用模型',
+    searchPlaceholder: '搜索模型',
+    loadFailed: '加载失败',
+    noMatch: '没有匹配的模型',
+    rate: '倍率',
+    subscriptionGroup: '订阅分组',
+    perRequest: '次',
+    discount: '{n}折',
+    columns: {
+      model: '模型',
+      input: '输入',
+      output: '输出',
+      cacheWrite: '缓存写入',
+      cacheRead: '缓存读取',
+      saving: '节省'
+    }
+  },
+
   // Available Channels (user-facing)
   availableChannels: {
     title: '可用渠道',

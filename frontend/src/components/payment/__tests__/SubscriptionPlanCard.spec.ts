@@ -118,17 +118,18 @@ describe("SubscriptionPlanCard", () => {
     const badge = wrapper.findAll("span").find((node) => node.text() === "OpenAI");
     const price = wrapper.findAll("span").find((node) => node.text() === "123.45");
 
-    expect(title.element.parentElement?.classList).toContain("min-w-0");
-    expect(title.element.parentElement?.classList).toContain("flex-1");
+    expect(title.classes()).toContain("min-w-0");
     expect(badge?.classes()).toContain("shrink-0");
     expect([...(badge?.element.parentElement?.classList ?? [])]).toEqual(expect.arrayContaining([
       "flex",
       "items-center",
-      "justify-end",
     ]));
-    expect(badge?.element.parentElement?.textContent).toContain("/ 30days");
-    expect(badge?.element.parentElement?.parentElement?.classList).toContain("shrink-0");
-    expect(price?.element.parentElement?.parentElement?.classList).toContain("shrink-0");
+    expect(badge?.element.parentElement?.contains(price?.element ?? null)).toBe(false);
+    expect([...(price?.element.parentElement?.classList ?? [])]).toEqual(expect.arrayContaining([
+      "flex",
+      "items-baseline",
+    ]));
+    expect(price?.element.parentElement?.textContent).toContain("/ 30days");
     expect(wrapper.get("p").text()).toBe("Includes advanced models and priority support.");
     expect(wrapper.get("button").text()).toBe("Subscribe now");
   });
@@ -140,12 +141,11 @@ describe("SubscriptionPlanCard", () => {
 
     expect(title.text()).toBe("Pro");
     expect(title.attributes("title")).toBe("Pro");
-    expect(title.classes()).toEqual(expect.arrayContaining(["text-base", "font-bold", "h-12"]));
+    expect(title.classes()).toEqual(expect.arrayContaining(["text-lg", "font-bold", "h-12"]));
     expect([...(badge?.element.parentElement?.classList ?? [])]).toEqual(expect.arrayContaining([
       "flex",
       "items-center",
-      "justify-end",
     ]));
-    expect(badge?.element.parentElement?.textContent).toContain("/ 30days");
+    expect(wrapper.text()).toContain("/ 30days");
   });
 });

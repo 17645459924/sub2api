@@ -607,6 +607,27 @@ export default {
     }
   },
 
+  modelPricing: {
+    title: 'Model Pricing',
+    pricingRule: 'Pricing rule: official price template $1 = {symbol}{rate}. Prices are per 1M tokens, with group rate applied.',
+    empty: 'No models available',
+    searchPlaceholder: 'Search models',
+    loadFailed: 'Failed to load',
+    noMatch: 'No matching models',
+    rate: 'Rate',
+    subscriptionGroup: 'Subscription group',
+    perRequest: 'request',
+    discount: '{n}x off',
+    columns: {
+      model: 'Model',
+      input: 'Input',
+      output: 'Output',
+      cacheWrite: 'Cache write',
+      cacheRead: 'Cache read',
+      saving: 'Saving'
+    }
+  },
+
   // Available Channels (user-facing)
   availableChannels: {
     title: 'Available Channels',
