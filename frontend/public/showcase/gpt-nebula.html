@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>粒子星云</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.hint{position:fixed;bottom:max(24px,env(safe-area-inset-bottom));width:100%;text-align:center;
+color:#92eddb80;font:12px system-ui;letter-spacing:3px;pointer-events:none;user-select:none}
+</style>
+</head>
+<body>
+<canvas id="sky" aria-label="交互粒子星云，移动可排斥粒子，点击产生冲击波"></canvas>
+<div class="hint">滑动扰动星云 · 点击释放涟漪</div>
+<script>
+'use strict';
+const canvas=document.getElementById('sky'),ctx=canvas.getContext('2d');
+const N=1200,particles=[],waves=[];
+const pointer={x:0,y:0,active:false};
+let w=innerWidth,h=innerHeight,last=0,time=0;
+const random=(a,b)=>a+Math.random()*(b-a);
+function resize(){
+  const oldW=w,oldH=h;
+  w=innerWidth;h=innerHeight;
+  const dpr=Math.min(devicePixelRatio||1,2);
+  canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+  for(const p of particles){p.x*=w/oldW;p.y*=h/oldH}
+}
+resize();
+for(let i=0;i<N;i++){
+  const mix=Math.random();
+  particles.push({
+    x:Math.random()*w,y:Math.random()*h,vx:0,vy:0,
+    r:random(.55,1.8),phase:random(0,Math.PI*2),
+    color:`rgb(${Math.round(150-100*mix)},${Math.round(255-50*mix)},${Math.round(195+60*mix)})`
+  });
+}
+function locate(e){
+  const rect=canvas.getBoundingClientRect();
+  pointer.x=e.clientX-rect.left;pointer.y=e.clientY-rect.top;
+}
+canvas.addEventListener('pointermove',e=>{locate(e);pointer.active=true});
+canvas.addEventListener('pointerdown',e=>{
+  locate(e);pointer.active=true;
+  canvas.setPointerCapture(e.pointerId);
+  waves.push({x:pointer.x,y:pointer.y,r:0,age:0});
+  if(waves.length>12)waves.shift();
+});
+canvas.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')pointer.active=false});
+canvas.addEventListener('pointercancel',()=>pointer.active=false);
+canvas.addEventListener('pointerleave',()=>pointer.active=false);
+window.addEventListener('blur',()=>{pointer.active=false;last=0});
+window.addEventListener('resize',resize);
+function frame(now){
+  const dt=last?Math.min((now-last)/1000,.033):1/60;
+  last=now;time+=dt;
+  const step=dt*60,damping=Math.pow(.965,step);
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`rgba(0,0,0,${1-Math.pow(.85,step)})`;
+  ctx.fillRect(0,0,w,h);
+  for(let i=waves.length-1;i>=0;i--){
+    const wave=waves[i];
+    wave.age+=dt;wave.r+=dt*420;
+    if(wave.age>1.8)waves.splice(i,1);
+  }
+  ctx.globalCompositeOperation='lighter';
+  for(const p of particles){
+    const angle=Math.sin(p.x*.003+time*.13)*2+
+      Math.cos(p.y*.0035-time*.11)*2+Math.sin((p.x+p.y)*.0015+time*.08);
+    p.vx+=Math.cos(angle)*.022*step;
+    p.vy+=Math.sin(angle)*.022*step;
+    if(pointer.active){
+      const dx=p.x-pointer.x,dy=p.y-pointer.y,d=Math.hypot(dx,dy);
+      if(d<145){
+        const force=Math.pow(1-d/145,2)*.95*step;
+        p.vx+=dx/(d||1)*force;p.vy+=dy/(d||1)*force;
+      }
+    }
+    for(const wave of waves){
+      const dx=p.x-wave.x,dy=p.y-wave.y,d=Math.hypot(dx,dy);
+      const band=Math.abs(d-wave.r);
+      if(band<40){
+        const force=(1-band/40)*(1-wave.age/1.8)*1.15*step;
+        p.vx+=dx/(d||1)*force;p.vy+=dy/(d||1)*force;
+      }
+    }
+    p.vx*=damping;p.vy*=damping;
+    p.x=(p.x+p.vx*step+w)%w;p.y=(p.y+p.vy*step+h)%h;
+    ctx.globalAlpha=.45+.3*Math.sin(time*.8+p.phase);
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+  }
+  for(const wave of waves){
+    ctx.globalAlpha=Math.pow(1-wave.age/1.8,2)*.28;
+    ctx.strokeStyle='#8cffe0';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(wave.x,wave.y,wave.r,0,Math.PI*2);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
