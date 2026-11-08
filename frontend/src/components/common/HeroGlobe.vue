@@ -133,7 +133,7 @@ onMounted(async () => {
           col += vec3(.75, .88, 1.0) * pow(max(dot(n, h), 0.0), 55.0) * spec * 1.1 * day;
           float rim = pow(1.0 - max(dot(n, vV), 0.0), 3.0);
           col += vec3(.2, .5, 1.0) * rim * .55 * (.35 + .65 * day);
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(col * .62, 1.0);
         }`,
     }))
     earth.add(globe)
