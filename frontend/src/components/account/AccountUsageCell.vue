@@ -1620,7 +1620,8 @@ const readActiveClaudeUsage = async (accountID: number): Promise<AccountUsageInf
     result = await adminAPI.accounts.getUsage(accountID, 'active', true)
   } catch (cause: any) {
     const reason = cause?.reason || cause?.response?.data?.reason
-    const message = reason === 'CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED'
+    const missingProfileScope = reason === 'CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED'
+    const message = missingProfileScope
       ? t('admin.accounts.usageWindow.claudeProfileScopeRequired')
       : cause?.response?.data?.message || cause?.message || t('common.error')
     // An inference-only token may not be allowed to query the usage endpoint.
@@ -1628,7 +1629,7 @@ const readActiveClaudeUsage = async (accountID: number): Promise<AccountUsageInf
     try {
       const passive = await adminAPI.accounts.getUsage(accountID, 'passive', true)
       if ((['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_fable'] as const).some(window => !isClaudeUsageUnknown(props.account, passive, window))) {
-        return { ...passive, source: 'passive', error: message }
+        return missingProfileScope ? { ...passive, source: 'passive' } : { ...passive, source: 'passive', error: message }
       }
     } catch { /* Preserve the original query failure. */ }
     throw new Error(message)
