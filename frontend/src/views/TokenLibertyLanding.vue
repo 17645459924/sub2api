@@ -29,6 +29,7 @@
           <router-link v-if="showModelPlazaEntry" to="/model-plaza">{{ c.modelPlaza }}</router-link>
         </nav>
         <div class="header-actions">
+          <router-link :to="startPath" class="nav-start">{{ c.start }}</router-link>
           <button
             class="language-button"
             type="button"
@@ -111,17 +112,6 @@
           </template>
         </div>
         <p class="sr-only">{{ c.universeSr }}</p>
-      </section>
-
-<section class="model-strip shell" :aria-label="c.compatibility">
-        <span class="strip-label">{{ c.poweredBy }}</span>
-        <div class="model-name claude-name"><span>✳</span>Claude</div>
-        <div class="model-name">
-          <span class="openai-symbol">◎</span>OpenAI
-          <small class="model-family">GPT · Codex</small>
-        </div>
-        <div class="strip-divider"></div>
-        <span class="compat-label"><span>↔</span> OpenAI & Anthropic API</span>
       </section>
 
       <section id="playground" class="playground-section shell section-space">
