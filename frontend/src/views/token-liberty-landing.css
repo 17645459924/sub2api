@@ -2985,3 +2985,5 @@
 /* real-texture globe: lighter scrim so the planet stays visible */
 .globe-universe .universe-core::before { inset: -10px -20px; background: radial-gradient(ellipse, #040914a0 10%, #04091455 50%, transparent 72%); }
 .globe-universe .universe-core { text-shadow: 0 2px 10px #020612, 0 0 24px #020612cc; }
+.globe-universe .universe-core::before { display: none; }
+.globe-universe .universe-core { text-shadow: 0 1px 3px #020612cc, 0 2px 14px #020612aa; }

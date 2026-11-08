@@ -91,7 +91,7 @@ onMounted(async () => {
     }
     stop = release
 
-    const lightDir = new T.Vector3(-.4, .3, .86).normalize()
+    const lightDir = new T.Vector3(-.22, .2, .96).normalize()
     scene.add(new T.AmbientLight(0x709cce, 1.2))
     const sun = new T.DirectionalLight(0xffffff, 2)
     sun.position.copy(lightDir).multiplyScalar(6)
@@ -123,7 +123,7 @@ onMounted(async () => {
           float ndl = dot(n, lightDir);
           float day = smoothstep(-.12, .3, ndl);
           vec3 d = texture2D(dayMap, vUv).rgb;
-          vec3 lit = d * (.12 + 1.35 * max(ndl, 0.0));
+          vec3 lit = d * (.2 + 1.3 * max(ndl, 0.0));
           vec3 night = texture2D(nightMap, vUv).rgb * vec3(1.5, 1.2, .75);
           vec3 col = mix(night * 1.1 + d * vec3(.015, .03, .07), lit, day);
           float twilight = smoothstep(-.1, .0, ndl) * (1.0 - smoothstep(.0, .2, ndl));
