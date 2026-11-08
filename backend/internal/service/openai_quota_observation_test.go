@@ -142,7 +142,8 @@ func TestCodexQuotaObservation_HeaderThenWebsocketDoesNotDropFiveHourWindow(t *t
 	case updates := <-repo.updateExtraCalls:
 		require.Contains(t, updates, "codex_observed_5h")
 		require.NotContains(t, updates, "codex_observed_7d")
-		sample := updates["codex_observed_5h"].(OpenAIQuotaObservation)
+		sample, ok := updates["codex_observed_5h"].(OpenAIQuotaObservation)
+		require.True(t, ok, "expected a quota observation")
 		require.Equal(t, 42.0, sample.UsedPercent)
 		require.Equal(t, "workspace-test", sample.AccountScope)
 	case <-time.After(2 * time.Second):
@@ -183,7 +184,8 @@ func TestCodexQuotaObservation_WebsocketIngressIntegration(t *testing.T) {
 			require.JSONEq(t, event, string(payload))
 			select {
 			case updates := <-repo.updateExtraCalls:
-				sample := updates["codex_observed_5h"].(OpenAIQuotaObservation)
+				sample, ok := updates["codex_observed_5h"].(OpenAIQuotaObservation)
+				require.True(t, ok, "expected a quota observation")
 				require.Equal(t, 42.0, sample.UsedPercent)
 				require.Equal(t, "websocket", sample.Source)
 				require.Equal(t, "workspace-test", sample.AccountScope)
