@@ -565,6 +565,10 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
 	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, err = stripAnthropicAccountTemperature(account, payloadBytes)
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to prepare test payload")
+	}
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})

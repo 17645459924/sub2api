@@ -50,6 +50,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	if err := checkAnthropicMessagesCredential(account); err != nil {
 		return nil, nil, err
 	}
+	var temperatureErr error
+	body, temperatureErr = stripAnthropicAccountTemperature(account, body)
+	if temperatureErr != nil {
+		return nil, nil, temperatureErr
+	}
 	body = stripDeferredToolCacheControl(body)
 	if account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
 		req, err := s.buildUpstreamRequestAnthropicVertex(ctx, c, account, body, token, modelID, reqStream)

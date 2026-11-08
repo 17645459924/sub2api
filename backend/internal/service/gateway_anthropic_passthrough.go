@@ -299,6 +299,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, []byte, error) {
+	var temperatureErr error
+	body, temperatureErr = stripAnthropicAccountTemperature(account, body)
+	if temperatureErr != nil {
+		return nil, nil, temperatureErr
+	}
 	body = stripDeferredToolCacheControl(body)
 	targetURL := claudeAPIURL
 	baseURL := getAnthropicGatewayBaseURL(account)

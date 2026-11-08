@@ -336,6 +336,32 @@ describe('EditAccountModal', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it.each([false, true])('saves and reloads the Anthropic temperature toggle (initial: %s)', async (initial) => {
+    const account = {
+      ...buildAccount(),
+      platform: 'anthropic',
+      type: 'apikey',
+      extra: { anthropic_disable_temperature: initial, anthropic_passthrough: true, unrelated: 'keep' }
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="anthropic-disable-temperature"]')
+    expect(toggle.attributes('aria-checked')).toBe(String(initial))
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    const saved = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(saved.anthropic_disable_temperature).toBe(initial ? undefined : true)
+    expect(saved.anthropic_passthrough).toBe(true)
+    expect(saved.unrelated).toBe('keep')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true, account: { ...account, extra: saved } })
+    expect(wrapper.get('[data-testid="anthropic-disable-temperature"]').attributes('aria-checked')).toBe(String(!initial))
+    await wrapper.setProps({ account: buildAccount() })
+    expect(wrapper.find('[data-testid="anthropic-disable-temperature"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('passes existing non-identity mappings to the whitelist selector and preserves them on save', async () => {
     const account = buildAccount()
     account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2', 'gpt-latest': 'deepseek-chat' }
