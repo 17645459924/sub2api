@@ -212,6 +212,8 @@ export default {
   "codeComment": "Your next creation starts here",
   "codeFooter": "Use your enabled model and API key",
   "codeToolSwitch": "Choose an example client",
+  "orbitImage": "Image models",
+  "curlHint": "A JSON response means your key and model are connected",
   "codeClaudeStep": "Install and set connection variables",
   "codeCodexStep": "Write the Codex config",
   "closingTitle": "The next great thing starts with you.",

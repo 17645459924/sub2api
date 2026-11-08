@@ -94,13 +94,24 @@
             :paused="paused"
             :label="c.sculptureLabel"
           />
-          <div class="orbit-label orbit-label-one">
-            <span class="model-symbol">✳</span> Claude
-            <span class="tiny-dot"></span>
-          </div>
-          <div class="orbit-label orbit-label-two">
-            <span class="model-symbol">◎</span> OpenAI
-            <span class="tiny-dot"></span>
+          <div class="orbit-system" :class="{ paused }" aria-hidden="true">
+            <span class="orbit-ring orbit-ring-a"></span>
+            <span class="orbit-ring orbit-ring-b"></span>
+            <div
+              v-for="chip in orbitChips"
+              :key="chip.id"
+              class="orbit-chip"
+              :style="{ '--x-delay': chip.xDelay, '--y-delay': chip.yDelay }"
+            >
+              <div class="orbit-x">
+                <div class="orbit-y">
+                  <div class="orbit-label">
+                    <span class="model-symbol" :class="`symbol-${chip.id}`">{{ chip.symbol }}</span>
+                    {{ chip.label }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="art-cross cross-one" aria-hidden="true">+</div>
           <div class="art-cross cross-two" aria-hidden="true">+</div>
@@ -711,6 +722,8 @@ const c = computed(() => ({
     connectPoint3: t('creativeLanding.connectPoint3'),
     readDocs: t('creativeLanding.readDocs'),
     copyCode: t('creativeLanding.copyCode'),
+    orbitImage: t('creativeLanding.orbitImage'),
+    curlHint: t('creativeLanding.curlHint'),
     copied: t('creativeLanding.copied'),
     copy: t('creativeLanding.copy'),
     copyFailed: t('creativeLanding.copyFailed'),
@@ -845,15 +858,41 @@ function closeImageOnBackdrop(event: MouseEvent) {
   )
     imageDialog.value.close()
 }
-type CodeTool = 'claude' | 'codex'
-const codeTool = ref<CodeTool>('claude')
+const ORBIT_PERIOD = 14
+const orbitChips = computed(() =>
+  [
+    { id: 'claude', symbol: '✳', label: 'Claude' },
+    { id: 'openai', symbol: '◎', label: 'OpenAI' },
+    { id: 'image', symbol: '✦', label: c.value.orbitImage },
+  ].map((chip, i) => {
+    const shift = (i * ORBIT_PERIOD) / 3
+    return {
+      ...chip,
+      xDelay: `${-shift}s`,
+      yDelay: `${-(shift + ORBIT_PERIOD / 4)}s`,
+    }
+  })
+)
+type CodeTool = 'curl' | 'claude' | 'codex'
+const codeTool = ref<CodeTool>('curl')
 const codeTools = [
+  { id: 'curl' as const, label: 'curl', icon: '$' },
   { id: 'claude' as const, label: 'Claude Code', icon: '✳' },
   { id: 'codex' as const, label: 'Codex', icon: '⌘' },
 ]
 const activeCodeTool = computed(() => codeTools.find((tool) => tool.id === codeTool.value)!)
 const code = computed(() => {
   const root = apiBase.value.replace(/\/v1$/, '')
+  if (codeTool.value === 'curl')
+    return [
+      '# ' + c.value.codeComment,
+      `curl ${apiBase.value}/responses \\`,
+      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+      '  -H "Content-Type: application/json" \\',
+      '  -d \'{"model": "YOUR_ENABLED_MODEL", "input": "Hello, possibility."}\'',
+      '',
+      '# ' + c.value.curlHint,
+    ].join('\n')
   if (codeTool.value === 'claude')
     return [
       '# ' + c.value.codeComment,

@@ -135,7 +135,12 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 			c.Next()
 			return
 		}
-		c.Header("X-Frame-Options", "DENY")
+		if isSameOriginEmbeddablePath(c) {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+			finalPolicy = strings.ReplaceAll(finalPolicy, "frame-ancestors 'none'", "frame-ancestors 'self'")
+		} else {
+			c.Header("X-Frame-Options", "DENY")
+		}
 		if isAPIRoutePath(c) {
 			c.Next()
 			return
@@ -167,6 +172,16 @@ func isShowcasePath(c *gin.Context) bool {
 	}
 	path := c.Request.URL.Path
 	return strings.HasPrefix(path, "/showcase/") && strings.HasSuffix(path, ".html")
+}
+
+// isSameOriginEmbeddablePath 标记被管理后台以同源 iframe 嵌入的页面（用量中心 /keeper/），
+// 它们仍保留完整的站点 CSP，仅放开 frame-ancestors 到同源。
+func isSameOriginEmbeddablePath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := c.Request.URL.Path
+	return path == "/keeper" || strings.HasPrefix(path, "/keeper/")
 }
 
 func isAPIRoutePath(c *gin.Context) bool {

@@ -77,7 +77,7 @@
   height: 31px;
 }
 .brand-dot {
-  font-size: 10px;
+  font-size: 12px;
   vertical-align: super;
   margin-left: 3px;
   font-weight: 500;
@@ -160,7 +160,7 @@
   align-items: center;
   gap: 10px;
   color: #65605a !important;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   border: 1px solid #ddd9d0;
   background: #f2f0e9;
@@ -286,7 +286,7 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  font-size: 10px;
+  font-size: 12px;
   color: #8f8a81;
   margin-top: 34px;
   letter-spacing: 0.3px;
@@ -350,7 +350,7 @@
   top: 33px;
   left: 28px;
   font:
-    8px/1.5 'Courier New',
+    12px/1.5 'Courier New',
     monospace;
   letter-spacing: 1.6px;
   color: #a19aab;
@@ -425,7 +425,7 @@
   z-index: 3;
 }
 .art-hint {
-  font-size: 9px;
+  font-size: 12px;
   color: #a198ad;
   display: flex;
   gap: 6px;
@@ -453,7 +453,7 @@
   border-radius: 3px;
   background: transparent;
   padding: 4px 11px;
-  font-size: 9px;
+  font-size: 12px;
   color: #9d91ad;
 }
 .shape-switch button.active {
@@ -487,13 +487,13 @@
 }
 .floating-response div > span {
   font:
-    7px 'Courier New',
+    12px 'Courier New',
     monospace;
   color: #a39ba9;
   letter-spacing: 0.7px;
 }
 .floating-response strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -522,7 +522,7 @@
 }
 .strip-label {
   font:
-    8px/1.8 'Courier New',
+    12px/1.8 'Courier New',
     monospace;
   color: #9a9489;
   letter-spacing: 1.2px;
@@ -560,7 +560,7 @@
 }
 .compat-label {
   font:
-    9px 'Courier New',
+    12px 'Courier New',
     monospace;
   display: flex;
   gap: 10px;
@@ -585,7 +585,7 @@
 }
 .eyebrow {
   font:
-    9px/1.8 'Courier New',
+    12px/1.8 'Courier New',
     monospace;
   letter-spacing: 1.7px;
   color: #8c8277;
@@ -641,7 +641,7 @@
   padding: 9px 17px;
   color: #8a847c;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -662,7 +662,7 @@
 }
 .studio-tag {
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 0.5px;
   display: flex;
@@ -694,7 +694,7 @@
 }
 .small-label {
   font:
-    8px/1.6 'Courier New',
+    12px/1.6 'Courier New',
     monospace;
   letter-spacing: 1.4px;
   color: #a294b3;
@@ -712,7 +712,7 @@
   max-width: 230px;
 }
 .brief-description {
-  font-size: 11px;
+  font-size: 12px;
   color: #9b9387;
   line-height: 1.9;
   margin-top: 10px !important;
@@ -727,7 +727,7 @@
   position: relative;
 }
 .prompt-card p {
-  font-size: 11px;
+  font-size: 12px;
   color: #796b89;
   line-height: 1.9;
   margin-top: 6px;
@@ -747,7 +747,7 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
-  font-size: 8px;
+  font-size: 12px;
   width: 100%;
   color: #a0988c;
   margin-top: 20px;
@@ -755,7 +755,7 @@
 }
 .demo-meta strong {
   font:
-    9px 'Courier New',
+    12px 'Courier New',
     monospace;
   color: #8a759b;
 }
@@ -763,7 +763,7 @@
   width: 100%;
   justify-content: space-between;
   min-height: 41px;
-  font-size: 11px !important;
+  font-size: 12px !important;
   padding: 10px 13px;
   margin-top: auto;
 }
@@ -771,7 +771,7 @@
   font-size: 15px;
 }
 .demo-disclaimer {
-  font-size: 8px;
+  font-size: 12px;
   color: #a69e92;
   margin-top: 10px !important;
   line-height: 1.8;
@@ -795,7 +795,7 @@
   gap: 8px;
   color: #7d788c;
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 0.3px;
   background: #16151c;
@@ -871,7 +871,7 @@
   background: #7350d5;
 }
 .cover-caption {
-  font-size: 8px;
+  font-size: 12px;
   color: #7f748f;
   z-index: 1;
   letter-spacing: 0.5px;
@@ -950,7 +950,7 @@
   justify-content: space-between;
   padding: 0 15px;
   font:
-    7px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 0.4px;
   gap: 12px;
@@ -985,7 +985,7 @@
 }
 .image-overlay span {
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 2px;
   color: #c4bbd6;
@@ -1023,7 +1023,7 @@
 .image-picker > span {
   margin-left: auto;
   font:
-    9px 'Courier New',
+    12px 'Courier New',
     monospace;
   color: #9c8cae;
 }
@@ -1032,13 +1032,13 @@
   justify-content: space-between;
   gap: 15px;
   margin-top: 15px;
-  font-size: 9px;
+  font-size: 12px;
   color: #a39a8e;
 }
 .playground-footnote button {
   background: none;
   border: 0;
-  font-size: 9px;
+  font-size: 12px;
   color: #a39a8e;
   padding: 0;
 }
@@ -1087,7 +1087,7 @@
 }
 .creation-tag {
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 1.4px;
   color: #eee9e7b0;
@@ -1100,7 +1100,7 @@
 }
 .creation-overlay p {
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   color: #d6ced5;
   margin-top: 8px;
@@ -1134,7 +1134,7 @@
   transform: rotate(45deg);
 }
 .gallery-note {
-  font-size: 8px;
+  font-size: 12px;
   color: #a59d92;
   margin-top: 15px !important;
 }
@@ -1181,7 +1181,7 @@
 .connect-steps h3 { font-size: 15px; font-weight: 650; line-height: 1.8; }
 .connect-steps p { margin-top: 4px; color: #665e70; font-size: 13px; line-height: 1.8; }
 .connect-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.connect-tools span { background: #f6f4f8; border: 1px solid #e8e3ee; padding: 3px 7px; border-radius: 5px; color: #5e5668; font-size: 10px; }
+.connect-tools span { background: #f6f4f8; border: 1px solid #e8e3ee; padding: 3px 7px; border-radius: 5px; color: #5e5668; font-size: 12px; }
 .liberty .connect-doc-link { display: flex; justify-content: space-between; margin-top: auto; min-height: 46px; background: #6941c6; color: #fff; border-radius: 9px; padding: 11px 16px; font-size: 13px; }
 .liberty .connect-doc-link:hover { background: #5832ae; }
 .code-window { min-width: 0; background: #1e1c27; color: #f2edf9; border: 0; border-left: 1px solid #ded8e8; border-radius: 0; overflow: hidden; box-shadow: none; transform: none; display: flex; flex-direction: column; }
@@ -1199,7 +1199,7 @@
 .code-purple { color: #c4a8ff; }
 .code-green { color: #b6e6c5; }
 .code-muted { color: #b1a8bf; }
-.code-window-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #191720; padding: 13px 22px; color: #bfb5ce; font: 11px/1.6 ui-monospace, Consolas, monospace; border-top: 1px solid #ffffff10; }
+.code-window-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #191720; padding: 13px 22px; color: #bfb5ce; font: 12px/1.6 ui-monospace, Consolas, monospace; border-top: 1px solid #ffffff10; }
 .code-window-footer .live-dot { background: #a3d4b6; }
 .code-window-footer > span:last-child { margin-left: auto; color: #cbbce1; }
 .closing-section {
@@ -1246,12 +1246,16 @@
 .closing-watermark {
   position: absolute;
   font:
-    210px/0.8 Georgia,
+    clamp(64px, 9vw, 128px)/1 Georgia,
     serif;
-  letter-spacing: -16px;
+  letter-spacing: -0.06em;
   color: #eae4f1a6;
-  right: 65px;
-  bottom: -21px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  max-width: 100%;
+  bottom: 4px;
   pointer-events: none;
   font-style: italic;
 }
@@ -1271,20 +1275,20 @@
   color: #5c554c !important;
 }
 .footer-brand span {
-  font-size: 8px;
+  font-size: 12px;
   vertical-align: super;
   margin-left: 3px;
 }
 .copyright {
   font:
-    8px 'Courier New',
+    12px 'Courier New',
     monospace;
   letter-spacing: 0.2px;
 }
 .site-footer > div {
   display: flex;
   gap: 24px;
-  font-size: 9px;
+  font-size: 12px;
 }
 .site-footer a:hover {
   color: var(--purple) !important;
@@ -1318,17 +1322,17 @@
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  font-size: 11px;
+  font-size: 12px;
   margin: 14px 5px 8px;
 }
 .image-dialog > div > span:last-child {
   font:
-    9px 'Courier New',
+    12px 'Courier New',
     monospace;
   color: #8e819a;
 }
 .image-dialog > p {
-  font-size: 11px;
+  font-size: 12px;
   color: #94889e;
   padding: 0 5px 8px;
 }
@@ -1448,10 +1452,10 @@
     gap: 16px;
   }
   .hero-note {
-    font-size: 8px;
+    font-size: 12px;
   }
   .art-hint {
-    font-size: 8px;
+    font-size: 12px;
   }
   .art-controls {
     left: 12px;
@@ -1515,7 +1519,7 @@
     font-size: 30px;
   }
   .copyright {
-    font-size: 7px;
+    font-size: 12px;
   }
   .site-footer {
     gap: 15px;
@@ -1547,11 +1551,11 @@
   }
   .nav-console {
     padding: 8px 11px;
-    font-size: 10px;
+    font-size: 12px;
     gap: 13px;
   }
   .language-button {
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
   .hero {
     grid-template-columns: 1fr;
@@ -1564,7 +1568,7 @@
     padding-bottom: 0;
   }
   .announcement {
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 0.5px;
     margin-bottom: 24px;
   }
@@ -1585,7 +1589,7 @@
     gap: 22px;
   }
   .hero-note {
-    font-size: 8px;
+    font-size: 12px;
     margin-top: 24px;
   }
   .button {
@@ -1602,7 +1606,7 @@
   .art-coordinate {
     top: 15px;
     left: 12px;
-    font-size: 7px;
+    font-size: 12px;
   }
   .art-grid {
     inset: 0;
@@ -1616,7 +1620,7 @@
     bottom: 108px;
   }
   .orbit-label {
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 10px;
   }
   .model-symbol {
@@ -1628,10 +1632,10 @@
     padding: 9px 12px;
   }
   .floating-response strong {
-    font-size: 9px;
+    font-size: 12px;
   }
   .floating-response div > span {
-    font-size: 6px;
+    font-size: 12px;
   }
   .art-controls {
     bottom: 4px;
@@ -1657,7 +1661,7 @@
     flex-basis: 100%;
     max-width: none;
     text-align: center;
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 1.5px;
   }
   .model-name {
@@ -1684,7 +1688,7 @@
     margin-bottom: 25px;
   }
   .eyebrow {
-    font-size: 8px;
+    font-size: 12px;
     margin-bottom: 13px !important;
   }
   .section-heading h2 {
@@ -1692,7 +1696,7 @@
     letter-spacing: -1px;
   }
   .section-description {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.9;
     margin-top: 13px !important;
     max-width: none;
@@ -1707,7 +1711,7 @@
   }
   .studio-tabs button {
     padding: 8px 9px;
-    font-size: 10px;
+    font-size: 12px;
     gap: 5px;
   }
   .studio-tabs button span {
@@ -1740,7 +1744,7 @@
   }
   .brief-description {
     grid-column: 1/-1;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.8;
     margin-top: 7px !important;
   }
@@ -1750,12 +1754,12 @@
     padding: 10px;
   }
   .prompt-card p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.8;
   }
   .demo-meta {
     grid-column: 1/-1;
-    font-size: 8px;
+    font-size: 12px;
     margin-block: 13px;
   }
   .demo-run {
@@ -1766,7 +1770,7 @@
   }
   .demo-disclaimer {
     grid-column: 1/-1;
-    font-size: 7px;
+    font-size: 12px;
     margin-top: 8px !important;
   }
   .studio-preview {
@@ -1789,13 +1793,13 @@
     min-height: 360px;
   }
   .preview-bottomline {
-    font-size: 6px;
+    font-size: 12px;
     padding-inline: 10px;
     height: 28px;
   }
   .preview-topline {
     padding-inline: 10px;
-    font-size: 7px;
+    font-size: 12px;
   }
   .image-preview {
     height: 330px;
@@ -1811,7 +1815,7 @@
     padding: 10px;
   }
   .playground-footnote {
-    font-size: 8px;
+    font-size: 12px;
     align-items: start;
     gap: 20px;
   }
@@ -1819,7 +1823,7 @@
     max-width: 210px;
   }
   .playground-footnote button {
-    font-size: 8px;
+    font-size: 12px;
     white-space: nowrap;
   }
   .playground-footnote button span {
@@ -1850,11 +1854,11 @@
     line-height: 1.6;
   }
   .creation-tag {
-    font-size: 6px;
+    font-size: 12px;
     letter-spacing: 1px;
   }
   .creation-overlay p {
-    font-size: 6px;
+    font-size: 12px;
   }
   .creation-overlay p span {
     display: block;
@@ -1867,7 +1871,7 @@
     right: 11px;
   }
   .gallery-note {
-    font-size: 7px;
+    font-size: 12px;
     line-height: 1.9;
   }
 
@@ -1898,16 +1902,14 @@
     margin-top: 16px;
   }
   .closing-bottom p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .closing-bottom .button {
     margin-top: 23px;
   }
   .closing-watermark {
-    font-size: 130px;
-    right: 0;
+    font-size: clamp(56px, 18vw, 130px);
     bottom: 12px;
-    letter-spacing: -11px;
   }
   .site-footer {
     padding-block: 23px;
@@ -1921,10 +1923,10 @@
   .copyright {
     order: 3;
     flex-basis: 100%;
-    font-size: 7px;
+    font-size: 12px;
   }
   .site-footer > div {
-    font-size: 8px;
+    font-size: 12px;
     gap: 13px;
   }
   .image-dialog > div {
@@ -1932,7 +1934,7 @@
     gap: 5px;
   }
   .image-dialog > p {
-    font-size: 9px;
+    font-size: 12px;
   }
   .image-dialog > img {
     max-height: 65dvh;
@@ -2018,7 +2020,7 @@
 }
 .model-family {
   font:
-    10px/1.5 'Courier New',
+    12px/1.5 'Courier New',
     monospace;
   letter-spacing: 0;
   color: #978e9f;
@@ -2028,30 +2030,119 @@
 }
 @media (max-width: 760px) {
   .model-family {
-    font-size: 8px;
+    font-size: 12px;
     padding-left: 6px;
   }
 }
 
 .brand-logo { width: 31px; height: 31px; object-fit: contain; }
-.closing-watermark { max-width: 100%; white-space: nowrap; font-size: clamp(60px, 13vw, 180px); letter-spacing: -.06em; overflow: hidden; }
+.closing-watermark { max-width: 100%; white-space: nowrap; font-size: clamp(56px, 9vw, 120px); line-height: 1; letter-spacing: -.06em; bottom: 8px; }
 
 @media (max-width: 1000px) {
   .connect-grid { grid-template-columns: minmax(230px, .8fr) minmax(0, 1.2fr); }
   .connect-heading { gap: 28px; }
   .connect-start { padding: 24px; }
-  .code-window pre { font-size: 11px; padding: 20px; }
+  .code-window pre { font-size: 12px; padding: 20px; }
 }
 @media (max-width: 760px) {
   .connect-section { margin-top: 60px; padding-block: 48px; }
   .connect-heading { grid-template-columns: minmax(0, 1fr); gap: 18px; margin-bottom: 24px; }
   .connect-copy h2 { font-size: 32px; }
   .connect-intro > p { font-size: 13px; }
-  .connect-points { font-size: 11px; }
+  .connect-points { font-size: 12px; }
   .connect-grid { grid-template-columns: minmax(0, 1fr); border-radius: 14px; }
   .connect-start { padding: 24px; }
   .connect-steps { gap: 22px; }
   .code-window { border-left: 0; border-top: 1px solid #ded8e8; }
-  .code-window pre { font-size: 11px; padding: 20px 16px; }
+  .code-window pre { font-size: 12px; padding: 20px 16px; }
   .code-window-header, .code-window-footer { padding-inline: 16px; }
+}
+
+/* ---- hero orbit: models circling the sculpture ---- */
+.orbit-system {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  --orbit-a: 250px;
+  --orbit-b: 104px;
+  --orbit-t: 7s;
+  transform: rotate(-9deg);
+}
+.orbit-ring {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: calc(var(--orbit-a) * 2);
+  height: calc(var(--orbit-b) * 2);
+  border: 1px solid #cdbbee;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.7;
+}
+.orbit-ring-b {
+  width: calc(var(--orbit-a) * 2.35);
+  height: calc(var(--orbit-b) * 2.7);
+  border-style: dashed;
+  border-color: #dfd3f3;
+  opacity: 0.55;
+}
+.orbit-chip {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 0;
+  height: 0;
+}
+.orbit-x,
+.orbit-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation-duration: var(--orbit-t);
+  animation-timing-function: cubic-bezier(0.37, 0, 0.63, 1);
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+.orbit-x {
+  animation-name: orbit-x;
+  animation-delay: var(--x-delay);
+}
+.orbit-y {
+  animation-name: orbit-y;
+  animation-delay: var(--y-delay);
+}
+.orbit-system .orbit-label {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(9deg);
+  animation: none;
+  white-space: nowrap;
+}
+.orbit-system.paused .orbit-x,
+.orbit-system.paused .orbit-y {
+  animation-play-state: paused;
+}
+.symbol-image { color: #7a52d6; }
+.symbol-openai { color: #383d39; }
+@keyframes orbit-x {
+  from { transform: translateX(calc(var(--orbit-a) * -1)); }
+  to { transform: translateX(var(--orbit-a)); }
+}
+@keyframes orbit-y {
+  from { transform: translateY(calc(var(--orbit-b) * -1)); }
+  to { transform: translateY(var(--orbit-b)); }
+}
+@media (max-width: 900px) {
+  .orbit-system { --orbit-a: 150px; --orbit-b: 80px; }
+}
+@media (max-width: 520px) {
+  .orbit-system { --orbit-a: 120px; --orbit-b: 70px; }
+  .code-window-header { padding-inline: 14px; gap: 8px; }
+  .code-tabs { gap: 2px; }
+  .code-window-header .code-tabs button { padding: 5px 8px; }
+  .code-window-header .code-tabs button > span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-x, .orbit-y { animation: none; }
+  .orbit-x { transform: translateX(calc(var(--orbit-a) * 0.7)); }
 }

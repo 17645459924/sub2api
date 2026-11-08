@@ -34,7 +34,13 @@ afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.unstubAllGlob
 it('keeps rendered and copied code in sync as deployment settings change', async () => {
   app.cachedPublicSettings.api_base_url = 'https://api.example/prefix/v1/'
   const { wrapper } = render(Landing)
-  const [claude, codex] = wrapper.findAll('.code-tabs button')
+  const [curl, claude, codex] = wrapper.findAll('.code-tabs button')
+  expect(curl.attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('pre').text()).toContain('curl https://api.example/prefix/v1/responses')
+  expect(wrapper.get('pre').text()).toContain('Authorization: Bearer YOUR_API_KEY')
+  await wrapper.get('[aria-label="Copy example code"]').trigger('click')
+  expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(wrapper.get('pre').text())
+  await claude.trigger('click')
   expect(claude.attributes('aria-pressed')).toBe('true')
   expect(wrapper.get('pre').text()).toContain('ANTHROPIC_BASE_URL="https://api.example/prefix"')
   expect(wrapper.get('pre').text()).not.toContain('/v1')

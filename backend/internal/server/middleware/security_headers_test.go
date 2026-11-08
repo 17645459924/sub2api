@@ -113,6 +113,30 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Contains(t, csp, "connect-src 'none'")
 	})
 
+	t.Run("keeper_usage_center_can_be_framed_by_same_origin_only", func(t *testing.T) {
+		middleware := SecurityHeaders(config.CSPConfig{Enabled: true}, nil)
+
+		for _, path := range []string{"/keeper", "/keeper/", "/keeper/index.html", "/keeper/overview"} {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+
+			middleware(c)
+
+			assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"), path)
+			csp := w.Header().Get("Content-Security-Policy")
+			assert.Contains(t, csp, "frame-ancestors 'self'", path)
+			assert.NotContains(t, csp, "frame-ancestors 'none'", path)
+			assert.Contains(t, csp, "script-src 'self' 'nonce-", path)
+		}
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/keepers", nil)
+		middleware(c)
+		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+	})
+
 	t.Run("non_showcase_pages_stay_unframeable", func(t *testing.T) {
 		middleware := SecurityHeaders(config.CSPConfig{Enabled: true}, nil)
 
