@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,23 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
+}
+
+func TestKeeperNestedRouteUsesOwnEntry(t *testing.T) {
+	dist := fstest.MapFS{
+		"index.html":        &fstest.MapFile{Data: []byte("vue host")},
+		"keeper/index.html": &fstest.MapFile{Data: []byte("keeper entry")},
+	}
+	s := &FrontendServer{distFS: dist, fileServer: http.FileServer(http.FS(dist))}
+	router := gin.New()
+	router.Use(s.Middleware())
+	for _, path := range []string{"/keeper/overview", "/keeper/credentials", "/keeper/analysis"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "keeper entry", w.Body.String())
+		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+	}
 }
 
 func TestInjectSiteTitle(t *testing.T) {

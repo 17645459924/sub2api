@@ -1,6 +1,7 @@
 import adminAccessKeys from './adminAccessKeys'
 import mcp from './mcp'
 import landing from './landing'
+import usageCenter from './usageCenter'
 import common from './common'
 import dashboard from './dashboard'
 import channelMonitorV2 from './channelMonitorV2'
@@ -12,6 +13,7 @@ export default {
   adminAccessKeys,
   mcp,
   ...landing,
+  ...usageCenter,
   ...common,
   ...dashboard,
   ...channelMonitorV2,

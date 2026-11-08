@@ -18,6 +18,13 @@ import { resolveRouteDocumentTitle } from './title'
  * Route definitions with lazy loading
  */
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/docs/quickstart',
+    alias: '/tools/setup/',
+    name: 'IntegrationGuide',
+    component: () => import('@/views/public/IntegrationGuideView.vue'),
+    meta: { requiresAuth: false, title: '接入文档' }
+  },
   // ==================== Setup Routes ====================
   {
     path: '/setup',
@@ -668,6 +675,12 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.usage.title',
       descriptionKey: 'admin.usage.description'
     }
+  },
+  {
+    path: '/admin/usage-center',
+    name: 'AdminUsageCenter',
+    component: () => import('@/views/admin/UsageCenterView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Usage Center', titleKey: 'usageCenter.title', descriptionKey: 'usageCenter.description' }
   },
   {
     path: '/admin/affiliates',

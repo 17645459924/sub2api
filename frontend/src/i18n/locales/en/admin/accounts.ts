@@ -1711,6 +1711,12 @@ export default {
         noData: 'No usage data available for this account'
       },
       usageWindow: {
+    observedWindowSample: '{window} observed from actual traffic · {time}',
+    usedQuotaLabel: 'Quota used',
+    liveFiveHourUnavailable: 'Upstream read at {time}; no 5h quota was returned.',
+    liveMeasurementUnavailable: 'No verified live quota was returned; saved samples or unknown values are shown.',
+    claudeProfileScopeRequired: 'This token lacks user:profile permission for live quota queries. Reauthorize with OAuth or use real request samples. Refreshing cannot grant the missing permission.',
+    monthlyWindow: 'Monthly',
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
         geminiProDaily: 'Pro',
@@ -1740,6 +1746,11 @@ export default {
         grokLastProbe: 'Probe {time}',
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
+        sampledAt: 'Upstream sample · {time}',
+        savedSampleAt: 'Saved sample from {time}, not a live query. New traffic through this account updates the sample.',
+        savedSampleOnly: 'The server returned saved upstream samples only. Live quota was not obtained.',
+        liveQueriedAt: 'Upstream queried · {time} (unchanged usage keeps the same values)',
+        noLiveWindows: 'Upstream returned no 5h / 7d quota windows. Previous data was kept.',
         activeQuery: 'Query',
         estimatedTotalCost: 'Est. total ${cost}',
         estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'

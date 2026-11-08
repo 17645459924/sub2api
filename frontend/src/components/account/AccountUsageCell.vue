@@ -1,5 +1,11 @@
 <template>
   <div ref="rootRef" v-if="showUsageWindows">
+    <div v-if="activeQueryError || (account.platform === 'openai' && usageInfo?.error)" role="alert" class="mb-1 max-w-[240px] break-words text-xs text-red-600 dark:text-red-400">
+      {{ activeQueryError || usageInfo?.error }}
+    </div>
+    <div v-if="queryFeedback" role="status" class="mb-1 max-w-[240px] text-[10px] text-gray-500 dark:text-gray-400">
+      {{ queryFeedback }}
+    </div>
     <!-- Anthropic OAuth and Setup Token accounts: fetch real usage data -->
     <template
       v-if="
@@ -29,72 +35,75 @@
         </template>
       </div>
 
-      <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
-
       <!-- Usage data -->
-      <div v-else-if="usageInfo" class="space-y-1">
+      <div v-else class="space-y-1">
         <!-- API error (degraded response) -->
-        <div v-if="usageInfo.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="usageInfo.error">
-          {{ usageInfo.error }}
+        <div v-if="!activeQueryError && (error || usageInfo?.error)" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="error || usageInfo?.error">
+          {{ error || usageInfo?.error }}
         </div>
+        <div class="text-[9px] text-gray-500 dark:text-gray-400">{{ t('admin.accounts.usageWindow.usedQuotaLabel') }}</div>
         <!-- 5h Window -->
         <UsageProgressBar
-          v-if="usageInfo.five_hour"
           label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
+          :utilization="usageInfo?.five_hour?.utilization ?? 0"
+          :unknown="isClaudeUsageUnknown(account, usageInfo, 'five_hour')"
+          :not-applicable="usageInfo?.five_hour?.not_applicable && usageInfo.five_hour.measurement_source === 'quota_api'"
+          :sample-expires-at="claudeUsageExpiry(usageInfo?.five_hour)"
+          :resets-at="usageInfo?.five_hour?.resets_at"
+          :window-stats="usageInfo?.five_hour?.window_stats"
           color="indigo"
         />
 
         <!-- 7d Window (OAuth only) -->
         <UsageProgressBar
-          v-if="usageInfo.seven_day"
           label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
+          :utilization="usageInfo?.seven_day?.utilization ?? 0"
+          :unknown="isClaudeUsageUnknown(account, usageInfo, 'seven_day')"
+          :sample-expires-at="claudeUsageExpiry(usageInfo?.seven_day)"
+          :resets-at="usageInfo?.seven_day?.resets_at"
           color="emerald"
         />
 
         <!-- 7d Sonnet Window (OAuth only) -->
         <UsageProgressBar
-          v-if="usageInfo.seven_day_sonnet"
+          v-if="usageInfo?.seven_day_sonnet"
           label="7d S"
           :utilization="usageInfo.seven_day_sonnet.utilization"
+          :unknown="isClaudeUsageUnknown(account, usageInfo, 'seven_day_sonnet')"
+          :sample-expires-at="claudeUsageExpiry(usageInfo?.seven_day_sonnet)"
           :resets-at="usageInfo.seven_day_sonnet.resets_at"
           color="purple"
         />
 
         <!-- 7d Fable Window (7d_oi) -->
         <UsageProgressBar
-          v-if="usageInfo.seven_day_fable"
+          v-if="usageInfo?.seven_day_fable"
           label="7d F"
           :utilization="usageInfo.seven_day_fable.utilization"
+          :unknown="isClaudeUsageUnknown(account, usageInfo, 'seven_day_fable')"
+          :sample-expires-at="claudeUsageExpiry(usageInfo?.seven_day_fable)"
           :resets-at="usageInfo.seven_day_fable.resets_at"
           color="amber"
         />
 
+        <div v-for="sample in claudeObservedWindows" :key="sample.label" class="text-[9px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.usageWindow.observedWindowSample', { window: sample.label, time: new Date(sample.at * 1000).toLocaleString() }) }}
+        </div>
+
       </div>
 
-      <!-- No data yet -->
-      <div v-else class="space-y-1">
-        <div class="text-xs text-gray-400">-</div>
-      </div>
       <!--
         One stable instance for every usage state, so a reset-credit query started
         while usage is still loading survives the usage response. The local query
         button shares its row once usage data exists.
       -->
       <ClaudeResetCreditsCell :account="account" class="mt-1" @redeemed="loadActiveUsage">
-        <template v-if="usageInfo" #pre-actions>
+        <template #pre-actions>
           <span
-            v-if="usageInfo.source === 'passive'"
+            v-if="usageInfo?.source === 'passive'"
             class="text-[9px] text-gray-400 dark:text-gray-500 italic"
           >
-            {{ t('admin.accounts.usageWindow.passiveSampled') }}
+            {{ passiveSampleLabel }}
           </span>
           <button
             type="button"
@@ -125,31 +134,49 @@
     <!-- OpenAI OAuth accounts: single source from /usage API -->
     <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
+        <div class="text-[9px] text-gray-500 dark:text-gray-400">{{ t('admin.accounts.usageWindow.usedQuotaLabel') }}</div>
         <UsageProgressBar
-          v-if="usageInfo?.five_hour"
           label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
-          :show-now-when-idle="true"
+          :utilization="usageInfo?.five_hour?.utilization ?? 0"
+          :unknown="!usageInfo?.five_hour || usageInfo.five_hour.utilization_unknown"
+          :sample-expires-at="openAIObservationExpiry(usageInfo?.five_hour)"
+          :resets-at="usageInfo?.five_hour?.resets_at"
+          :window-stats="usageInfo?.five_hour?.window_stats"
+          :show-now-when-idle="false"
           color="indigo"
         />
         <UsageProgressBar
           v-if="usageInfo?.seven_day"
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
+          :unknown="usageInfo.seven_day.utilization_unknown"
+          :sample-expires-at="openAIObservationExpiry(usageInfo.seven_day)"
           :resets-at="usageInfo.seven_day.resets_at"
           :window-stats="usageInfo.seven_day.window_stats"
           :estimated-total-cost="openAISevenDayEstimatedTotalCost"
-          :show-now-when-idle="true"
+          :show-now-when-idle="false"
           color="emerald"
         />
+        <UsageProgressBar
+          v-if="usageInfo?.thirty_day"
+          :label="t('admin.accounts.usageWindow.monthlyWindow')"
+          :utilization="usageInfo.thirty_day.utilization"
+          :unknown="usageInfo.thirty_day.utilization_unknown"
+          :resets-at="usageInfo.thirty_day.resets_at"
+          color="indigo"
+        />
+        <div v-if="usageInfo?.five_hour?.measurement_source && usageInfo.five_hour.measurement_source !== 'quota_api'" class="text-[9px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.usageWindow.observedWindowSample', { window: '5h', time: new Date((usageInfo.five_hour.sampled_at ?? 0) * 1000).toLocaleString() }) }}
+        </div>
+        <div v-if="usageInfo?.seven_day?.measurement_source && usageInfo.seven_day.measurement_source !== 'quota_api'" class="text-[9px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.usageWindow.observedWindowSample', { window: '7d', time: new Date((usageInfo.seven_day.sampled_at ?? 0) * 1000).toLocaleString() }) }}
+        </div>
         <!--
           Upstream codex /wham/usage quota query + reset. The local active-sampling
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell :account="account" @account-updated="handleQuotaResetAccountUpdated">
+        <OpenAIQuotaResetCell :account="account" :live-quota="liveOpenAIQuota" @account-updated="handleQuotaResetAccountUpdated" @quota-updated="handleOpenAIQuotaUpdated">
           <template #pre-actions>
             <button
               type="button"
@@ -189,12 +216,13 @@
         </div>
       </div>
       <div v-else>
-        <div class="text-xs text-gray-400">-</div>
+        <div class="text-xs text-gray-400">{{ t('usage.quotaUnknown') }}</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
         <OpenAIQuotaResetCell
           :account="account"
+          :live-quota="liveOpenAIQuota"
           class="mt-1"
-          @account-updated="handleQuotaResetAccountUpdated"
+          @account-updated="handleQuotaResetAccountUpdated" @quota-updated="handleOpenAIQuotaUpdated"
         />
       </div>
     </template>
@@ -704,6 +732,8 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { openAIQuotaToUsage } from '@/utils/openAIQuotaUsage'
+import { claudeUsageExpiry, isClaudeUsageUnknown, isLegacyClaudeEstimate } from '@/utils/claudeUsageMeasurement'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
 import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
@@ -762,8 +792,19 @@ onBeforeUnmount(() => { unmounted.value = true })
 
 const loading = ref(false)
 const activeQueryLoading = ref(false)
+const activeQueryError = ref<string | null>(null)
+const queryFeedback = ref<string | null>(null)
+let usageRequestVersion = 0
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
+const liveOpenAIQuota = ref<{ accountID: number; quota: Parameters<typeof openAIQuotaToUsage>[0] } | null>(null)
+const passiveSampleLabel = computed(() => {
+  const sampledAt = usageInfo.value?.updated_at
+  const date = sampledAt ? new Date(sampledAt) : null
+  return date && Number.isFinite(date.getTime())
+    ? t('admin.accounts.usageWindow.sampledAt', { time: date.toLocaleString() })
+    : t('admin.accounts.usageWindow.passiveSampled')
+})
 watch(usageInfo, (usage) => {
   if (usage) emit('usage-loaded', usage)
 })
@@ -845,9 +886,23 @@ const geminiUsageAvailable = computed(() => {
   )
 })
 
+const openAIObservationExpiry = (progress: AccountUsageInfo['five_hour'] | undefined): number | undefined => {
+  if (!progress?.sampled_at || !progress.measurement_source || progress.measurement_source === 'quota_api') return undefined
+  const resetAt = progress.resets_at ? new Date(progress.resets_at).getTime() / 1000 : Infinity
+  return Math.min(progress.sampled_at + 300, resetAt)
+}
+
+const claudeObservedWindows = computed(() => (
+  [['five_hour', '5h'], ['seven_day', '7d'], ['seven_day_sonnet', '7d S'], ['seven_day_fable', '7d F']] as const
+).flatMap(([key, label]) => {
+  const progress = usageInfo.value?.[key]
+  return progress?.measurement_source === 'response_headers' && progress.sampled_at
+    ? [{ label, at: progress.sampled_at }] : []
+}))
+
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
+  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day || !!usageInfo.value?.thirty_day
 })
 
 const openAISevenDayEstimatedTotalCost = computed(() => {
@@ -1446,6 +1501,7 @@ const requestParentBatchUsage = (options?: { force?: boolean }) => {
 
 const syncManagedUsageState = () => {
   if (!isBatchManaged.value) return
+  if (props.batchedUsage && props.batchedUsage !== usageInfo.value) activeQueryError.value = null
   usageInfo.value = props.batchedUsage ?? null
   error.value = props.batchedUsageError ?? null
   loading.value = props.batchedUsageLoading === true
@@ -1470,23 +1526,31 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
 
   loading.value = true
   error.value = null
+  const requestVersion = ++usageRequestVersion
+  const accountID = props.account.id
 
   try {
-		const fetchFn = () => options?.source
-			? adminAPI.accounts.getUsage(props.account.id, options.source, options.bypassCache === true)
-			: adminAPI.accounts.getUsage(props.account.id)
+    const fetchFn = () => props.account.platform === 'openai' && props.account.type === 'oauth' && options?.bypassCache
+      ? readLiveOpenAIUsage(accountID, requestVersion)
+      : props.account.platform === 'anthropic' && options?.bypassCache && options.source !== 'passive'
+      ? readActiveClaudeUsage(accountID)
+      : options?.source || options?.bypassCache
+      ? adminAPI.accounts.getUsage(accountID, options.source ?? 'active', options.bypassCache === true)
+      : adminAPI.accounts.getUsage(accountID)
     const result = await enqueueUsageRequest(props.account, fetchFn)
-    if (!unmounted.value) {
+    if (!unmounted.value && props.account.id === accountID && requestVersion === usageRequestVersion) {
       usageInfo.value = result
+      activeQueryError.value = null
+      if (options?.bypassCache) reportQueryResult(result)
       _usageCache.set(props.account.id, { data: result, ts: Date.now() })
     }
   } catch (e: any) {
-    if (!unmounted.value) {
+    if (!unmounted.value && props.account.id === accountID && requestVersion === usageRequestVersion) {
       error.value = t('common.error')
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value) loading.value = false
+    if (!unmounted.value && requestVersion === usageRequestVersion) loading.value = false
   }
 }
 
@@ -1540,14 +1604,83 @@ const attachVisibilityObserver = () => {
   visibilityObserver.observe(rootRef.value)
 }
 
-const loadActiveUsage = async () => {
-  activeQueryLoading.value = true
+const readLiveOpenAIUsage = async (accountID: number, requestVersion: number): Promise<AccountUsageInfo> => {
+  const quota = await adminAPI.accounts.queryOpenAIQuota(accountID)
+  if (!unmounted.value && props.account.id === accountID && requestVersion === usageRequestVersion) {
+    liveOpenAIQuota.value = { accountID, quota }
+  }
+  const usage = openAIQuotaToUsage(quota, usageInfo.value)
+  if (!usage) throw new Error(t('admin.accounts.usageWindow.noLiveWindows'))
+  return usage
+}
+
+const readActiveClaudeUsage = async (accountID: number): Promise<AccountUsageInfo> => {
+  let result: AccountUsageInfo
   try {
-    usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
+    result = await adminAPI.accounts.getUsage(accountID, 'active', true)
+  } catch (cause: any) {
+    const reason = cause?.reason || cause?.response?.data?.reason
+    const message = reason === 'CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED'
+      ? t('admin.accounts.usageWindow.claudeProfileScopeRequired')
+      : cause?.response?.data?.message || cause?.message || t('common.error')
+    // An inference-only token may not be allowed to query the usage endpoint.
+    // Keep the failure visible while reading actual request samples separately.
+    try {
+      const passive = await adminAPI.accounts.getUsage(accountID, 'passive', true)
+      if ((['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_fable'] as const).some(window => !isClaudeUsageUnknown(props.account, passive, window))) {
+        return { ...passive, source: 'passive', error: message }
+      }
+    } catch { /* Preserve the original query failure. */ }
+    throw new Error(message)
+  }
+  if (!isLegacyClaudeEstimate(props.account, result)) return result
+  // Older servers ignore force for setup tokens and only return estimated 5h.
+  // Read their measured response-header snapshots instead of replacing 7d with nil.
+  const passive = await adminAPI.accounts.getUsage(accountID, 'passive', true)
+  return { ...passive, source: 'passive' }
+}
+
+const reportQueryResult = (usage: AccountUsageInfo) => {
+  if (usage.error && usage.source !== 'passive') { queryFeedback.value = null; return }
+  if (usage.source === 'passive') {
+    const sampledAt = usage.updated_at ? new Date(usage.updated_at) : null
+    queryFeedback.value = sampledAt && Number.isFinite(sampledAt.getTime())
+      ? t('admin.accounts.usageWindow.savedSampleAt', { time: sampledAt.toLocaleString() })
+      : t('admin.accounts.usageWindow.savedSampleOnly')
+  } else if (props.account.platform === 'openai' && usage.source === 'active' && !usage.five_hour) {
+    queryFeedback.value = t('admin.accounts.usageWindow.liveFiveHourUnavailable', { time: new Date().toLocaleTimeString() })
+  } else if (usage.source === 'active' && (props.account.platform !== 'anthropic' ||
+    (['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_fable'] as const).some(window => !isClaudeUsageUnknown(props.account, usage, window)))) {
+    queryFeedback.value = t('admin.accounts.usageWindow.liveQueriedAt', { time: new Date().toLocaleTimeString() })
+  } else {
+    queryFeedback.value = t('admin.accounts.usageWindow.liveMeasurementUnavailable')
+  }
+}
+
+const loadActiveUsage = async () => {
+  if (activeQueryLoading.value) return
+  const accountID = props.account.id
+  const requestVersion = ++usageRequestVersion
+  activeQueryLoading.value = true
+  activeQueryError.value = null
+  queryFeedback.value = null
+  try {
+    const result = props.account.platform === 'openai' && props.account.type === 'oauth'
+      ? await readLiveOpenAIUsage(accountID, requestVersion)
+      : await enqueueUsageRequest(props.account, () => readActiveClaudeUsage(accountID))
+    if (unmounted.value || props.account.id !== accountID || requestVersion !== usageRequestVersion) return
+    usageInfo.value = result
+    _usageCache.set(accountID, { data: result, ts: Date.now() })
+    error.value = null
+    activeQueryError.value = result.error || null
+    reportQueryResult(result)
   } catch (e: any) {
+    if (unmounted.value || props.account.id !== accountID || requestVersion !== usageRequestVersion) return
+    activeQueryError.value = e?.response?.data?.message || e?.message || t('common.error')
     console.error('Failed to load active usage:', e)
   } finally {
     activeQueryLoading.value = false
+    if (requestVersion === usageRequestVersion) loading.value = false
   }
 }
 
@@ -1621,6 +1754,22 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
   if (limit <= 0) return null
   return makeQuotaBar(props.account.quota_used ?? 0, limit)
 })
+
+const handleOpenAIQuotaUpdated = (quota: Parameters<typeof openAIQuotaToUsage>[0]) => {
+  if (unmounted.value) return
+  const result = openAIQuotaToUsage(quota, usageInfo.value)
+  if (!result) {
+    activeQueryError.value = t('admin.accounts.usageWindow.noLiveWindows')
+    return
+  }
+  ++usageRequestVersion
+  loading.value = false
+  usageInfo.value = result
+  _usageCache.set(props.account.id, { data: result, ts: Date.now() })
+  error.value = null
+  activeQueryError.value = null
+  reportQueryResult(result)
+}
 
 const handleQuotaResetAccountUpdated = (account: Account) => {
   emit('account-updated', account)
@@ -1732,14 +1881,18 @@ watch(
     if (nextToken === prevToken) return
     if (!shouldFetchUsage.value) return
 
+    if ((props.account.platform === 'openai' && props.account.type === 'oauth') || isAnthropicOAuthOrSetupToken.value) {
+      loadActiveUsage().catch(console.error)
+      return
+    }
+
     if (isBatchManaged.value) {
       requestParentBatchUsage({ force: true })
       return
     }
 
-    const source = isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined
     _usageCache.delete(props.account.id)
-    loadUsage({ source, bypassCache: true }).catch((e) => {
+    loadUsage({ source: 'active', bypassCache: true }).catch((e) => {
       console.error('Failed to refresh usage after manual refresh:', e)
     })
   }

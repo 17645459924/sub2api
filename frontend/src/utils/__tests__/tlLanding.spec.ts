@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isTlLandingContent, nextTypedLength, SHOWCASE_IMAGES, SHOWCASE_DEMOS } from '../tlLanding'
+import { isTlLandingContent, nextTypedLength, SHOWCASE_IMAGES, SHOWCASE_DEMOS, resolveLandingApiBase, LANDING_DOC_PATH } from '../tlLanding'
 
 describe('tlLanding', () => {
   it('only matches the exact marker (trimmed)', () => {
@@ -17,12 +17,20 @@ describe('tlLanding', () => {
     expect(nextTypedLength(2, 0)).toBe(0)
   })
 
-  it('every showcase item labels model and date', () => {
-    for (const i of SHOWCASE_IMAGES) {
-      expect(i.model).toBeTruthy()
-      expect(i.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  it('does not fabricate asset provenance', () => {
+    for (const item of [...SHOWCASE_IMAGES, ...Object.values(SHOWCASE_DEMOS)]) {
+      expect(item.model).toBeFalsy()
+      expect(item.date).toBeFalsy()
     }
-    expect(SHOWCASE_DEMOS.claude.model).toBe('claude-sonnet-5-5')
-    expect(SHOWCASE_DEMOS.gpt.model).toBe('gpt-6.1-sol')
+  })
+  it('uses configured endpoints, preserves prefixes and normalizes /v1', () => {
+    expect(resolveLandingApiBase('https://gateway.example/proxy/v1/', 'https://local.example')).toBe('https://gateway.example/proxy/v1')
+    expect(resolveLandingApiBase('https://gateway.example/v1/v1', 'https://local.example')).toBe('https://gateway.example/v1')
+    expect(resolveLandingApiBase('', 'https://local.example')).toBe('https://local.example/v1')
+    expect(resolveLandingApiBase('javascript:alert(1)', 'https://local.example')).toBe('https://local.example/v1')
+    expect(resolveLandingApiBase('https://user:pass@gateway.example', 'https://local.example')).toBe('https://local.example/v1')
+  })
+  it('points the landing documentation entry at the built-in guide', () => {
+    expect(LANDING_DOC_PATH).toBe('/docs/quickstart')
   })
 })

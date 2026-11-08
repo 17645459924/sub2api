@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import checker from 'vite-plugin-checker'
 import { resolve } from 'path'
+import { readFileSync } from 'node:fs'
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -85,6 +86,20 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      {
+        name: 'keeper-spa',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const path = req.url?.split('?')[0] || ''
+            if (path.startsWith('/keeper/') && !path.includes('/assets/') && !path.endsWith('.html')) {
+              try {
+                res.setHeader('Content-Type', 'text/html; charset=utf-8')
+                res.end(readFileSync(resolve(__dirname, 'public/keeper/index.html')))
+              } catch { next() }
+            } else next()
+          })
+        }
+      },
       vue(),
       checker({
         vueTsc: true

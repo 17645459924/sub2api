@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -28,6 +30,8 @@ func (s *ClaudeUsageServiceSuite) TearDownTest() {
 type usageRequestCapture struct {
 	authorization string
 	anthropicBeta string
+	userAgent     string
+	method        string
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
@@ -36,6 +40,8 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
 	s.srv = newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.authorization = r.Header.Get("Authorization")
 		captured.anthropicBeta = r.Header.Get("anthropic-beta")
+		captured.userAgent = r.Header.Get("User-Agent")
+		captured.method = r.Method
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{
@@ -59,6 +65,9 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
 	// Assertions on captured request data
 	require.Equal(s.T(), "Bearer at", captured.authorization, "Authorization header mismatch")
 	require.Equal(s.T(), "oauth-2025-04-20", captured.anthropicBeta, "anthropic-beta header mismatch")
+	require.Equal(s.T(), "claude-cli/2.1.280 (external, cli)", captured.userAgent)
+	require.Equal(s.T(), http.MethodGet, captured.method)
+	require.Equal(s.T(), "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1", defaultClaudeUsageURL)
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_NonOK() {
@@ -76,6 +85,20 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_NonOK() {
 	require.Error(s.T(), err)
 	require.ErrorContains(s.T(), err, "status 401")
 	require.ErrorContains(s.T(), err, "nope")
+}
+
+func (s *ClaudeUsageServiceSuite) TestFetchUsage_ProfileScopeRequired() {
+	s.srv = newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"type":"error","error":{"type":"permission_error","message":"OAuth token does not meet scope requirement user:profile"}}`)
+	}))
+	s.fetcher = &claudeUsageService{usageURL: s.srv.URL, allowPrivateHosts: true}
+	resp, err := s.fetcher.FetchUsage(context.Background(), "test-token", "")
+	require.Nil(s.T(), resp)
+	require.Equal(s.T(), http.StatusForbidden, infraerrors.Code(err))
+	require.Equal(s.T(), "CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED", infraerrors.Reason(err))
+	require.ErrorContains(s.T(), err, "Reauthorize")
+	require.NotContains(s.T(), err.Error(), "test-token")
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_BadJSON() {

@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>流光画布 · Creative Lab</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #0d0915;
+        color: #ded1ef;
+        font-family: system-ui, sans-serif;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .top {
+        position: absolute;
+        left: 22px;
+        top: 20px;
+        pointer-events: none;
+      }
+      .eyebrow {
+        font: 8px monospace;
+        letter-spacing: 2px;
+        color: #a18bb5;
+      }
+      .top h1 {
+        font-size: 18px;
+        font-weight: 400;
+        letter-spacing: 2px;
+        margin: 8px 0;
+      }
+      .top p {
+        font-size: 9px;
+        color: #a48db7;
+        margin: 0;
+      }
+      .bottom {
+        position: absolute;
+        bottom: 16px;
+        left: 20px;
+        right: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .palettes,
+      .tools {
+        display: flex;
+        gap: 7px;
+      }
+      button {
+        border: 1px solid #ffffff25;
+        background: #1c122b99;
+        backdrop-filter: blur(12px);
+        color: #c8b1dd;
+        border-radius: 4px;
+        font: 9px system-ui;
+        cursor: pointer;
+        padding: 6px 10px;
+      }
+      button:hover {
+        border-color: #a884d0;
+      }
+      button:focus-visible {
+        outline: 2px solid #c8b1ff;
+        outline-offset: 3px;
+      }
+      .palettes button {
+        width: 23px;
+        height: 23px;
+        padding: 3px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--a), var(--b));
+        border: 2px solid #21182c;
+        box-shadow: 0 0 0 1px #ffffff20;
+      }
+      .palettes button[aria-pressed='true'] {
+        box-shadow: 0 0 0 1px #e1c1ff;
+      }
+      .label {
+        position: absolute;
+        right: 22px;
+        top: 23px;
+        font: 8px monospace;
+        letter-spacing: 2px;
+        color: #887594;
+      }
+      .toast {
+        position: absolute;
+        bottom: 55px;
+        right: 20px;
+        font-size: 9px;
+        color: #cbb6e0;
+        background: #21152dcc;
+        padding: 7px 12px;
+        border-radius: 4px;
+      }
+      .toast:empty {
+        display: none;
+      }
+      @media (max-width: 400px) {
+        .top {
+          left: 15px;
+          top: 15px;
+        }
+        .top h1 {
+          font-size: 16px;
+        }
+        .label {
+          right: 15px;
+          top: 18px;
+          font-size: 6px;
+          letter-spacing: 1px;
+        }
+        .bottom {
+          left: 15px;
+          right: 15px;
+        }
+        .top p {
+          max-width: 170px;
+          line-height: 1.7;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="art"
+      role="img"
+      aria-label="交互流光画布，拖动鼠标或手指绘制光迹 / Draw light trails with your mouse or finger"
+    ></canvas>
+    <div class="top">
+      <div class="eyebrow">CREATIVE LAB / 001</div>
+      <h1 id="title">让指尖，流动成光。</h1>
+      <p id="hint">按住拖动绘制光迹，松开让它自由流动。</p>
+    </div>
+    <div class="label">AURORA CANVAS ↗</div>
+    <div class="bottom">
+      <div class="palettes" role="group" aria-label="配色 / Colors">
+        <button
+          aria-label="紫色极光 / Violet"
+          aria-pressed="true"
+          style="--a: #6656ea; --b: #f185cc"
+          data-palette="0"
+        ></button
+        ><button
+          aria-label="青色海洋 / Ocean"
+          aria-pressed="false"
+          style="--a: #13a9ac; --b: #8be4c9"
+          data-palette="1"
+        ></button
+        ><button
+          aria-label="日落珊瑚 / Sunset"
+          aria-pressed="false"
+          style="--a: #f79c56; --b: #df6898"
+          data-palette="2"
+        ></button>
+      </div>
+      <div class="tools">
+        <button id="clear" type="button">重绘</button
+        ><button id="save" type="button">保存 PNG ↗</button>
+      </div>
+    </div>
+    <div id="toast" class="toast" role="status"></div>
+    <script>
+      'use strict'
+      const canvas = document.getElementById('art'),
+        ctx = canvas.getContext('2d')
+      const motion = matchMedia('(prefers-reduced-motion: reduce)')
+      let w = 1,
+        h = 1,
+        dpr = 1,
+        time = 0,
+        last = 0,
+        raf = 0,
+        palette = 0,
+        painting = false,
+        lines = [],
+        sparkles = []
+      const pointer = { x: 0, y: 0 }
+      const colors = [
+        [262, 302],
+        [172, 208],
+        [20, 338],
+      ]
+      const isEnglish =
+        new URLSearchParams(location.search).get('lang') === 'en'
+      if (isEnglish) {
+        document.documentElement.lang = 'en'
+        document.getElementById('title').textContent =
+          'Make light. Leave a trace.'
+        document.getElementById('hint').textContent =
+          'Drag to paint light. Release to let it wander.'
+        document.getElementById('clear').textContent = 'Redraw'
+        document.getElementById('save').textContent = 'Save PNG ↗'
+      }
+      function resize() {
+        const oldW = w,
+          oldH = h
+        w = innerWidth
+        h = innerHeight
+        dpr = Math.min(devicePixelRatio || 1, 2)
+        canvas.width = w * dpr
+        canvas.height = h * dpr
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        for (const line of lines)
+          for (const p of line.points) {
+            p.x *= w / oldW
+            p.y *= h / oldH
+          }
+        draw()
+        start()
+      }
+      function locate(e) {
+        const r = canvas.getBoundingClientRect()
+        pointer.x = e.clientX - r.left
+        pointer.y = e.clientY - r.top
+      }
+      function makePoint() {
+        if (!lines.length) return
+        const line = lines[lines.length - 1]
+        line.points.push({ x: pointer.x, y: pointer.y })
+        if (line.points.length > 220) line.points.shift()
+        if (!motion.matches)
+          for (let i = 0; i < 2; i++)
+            sparkles.push({
+              x: pointer.x,
+              y: pointer.y,
+              vx: (Math.random() - 0.5) * 1.7,
+              vy: (Math.random() - 0.5) * 1.7,
+              life: 1,
+              hue: colors[palette][0],
+            })
+        if (sparkles.length > 200) sparkles.splice(0, sparkles.length - 200)
+      }
+      canvas.addEventListener('pointerdown', (e) => {
+        locate(e)
+        painting = true
+        canvas.setPointerCapture(e.pointerId)
+        lines.push({ points: [], hue: colors[palette][0] })
+        if (lines.length > 14) lines.shift()
+        makePoint()
+        draw()
+      })
+      canvas.addEventListener('pointermove', (e) => {
+        locate(e)
+        if (painting) {
+          makePoint()
+          if (motion.matches) draw()
+        }
+      })
+      canvas.addEventListener('pointerup', () => {
+        painting = false
+      })
+      canvas.addEventListener('pointercancel', () => {
+        painting = false
+      })
+      function path(points) {
+        ctx.beginPath()
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i]
+          if (i === 0) ctx.moveTo(p.x, p.y)
+          else {
+            const prev = points[i - 1]
+            ctx.quadraticCurveTo(
+              prev.x,
+              prev.y,
+              (p.x + prev.x) / 2,
+              (p.y + prev.y) / 2
+            )
+          }
+        }
+      }
+      function draw() {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+        ctx.fillStyle = '#0d0915'
+        ctx.fillRect(0, 0, w, h)
+        const glow = ctx.createRadialGradient(
+          w * 0.53,
+          h * 0.5,
+          0,
+          w * 0.5,
+          h * 0.5,
+          w * 0.65
+        )
+        glow.addColorStop(0, `hsla(${colors[palette][0]},65%,22%,.38)`)
+        glow.addColorStop(1, 'transparent')
+        ctx.fillStyle = glow
+        ctx.fillRect(0, 0, w, h)
+        ctx.globalCompositeOperation = 'screen'
+        for (let band = 0; band < 3; band++) {
+          for (let j = 0; j < 26; j++) {
+            const points = []
+            for (let s = 0; s <= 100; s++) {
+              const u = s / 100
+              const x = w * (u * 1.24 - 0.12)
+              const envelope = Math.sin(u * Math.PI)
+              const y =
+                h *
+                  (0.49 +
+                    Math.sin(u * 5.6 + time * 0.23 + band * 0.85) * 0.14 +
+                    Math.sin(u * 8.8 - time * 0.18 + band * 0.7) * 0.07) +
+                (j - 13) * h * 0.006 * envelope +
+                band * h * 0.025
+              points.push({ x, y })
+            }
+            const hue =
+              colors[palette][0] +
+              ((colors[palette][1] - colors[palette][0]) * band) / 3
+            path(points)
+            ctx.strokeStyle = `hsla(${hue},75%,${60 + j * 0.6}%,${0.08 + Math.sin((j / 26) * Math.PI) * 0.14})`
+            ctx.lineWidth = 1
+            ctx.stroke()
+            if (j === 13) {
+              path(points)
+              ctx.shadowColor = `hsl(${hue},85%,65%)`
+              ctx.shadowBlur = 24
+              ctx.strokeStyle = `hsla(${hue},85%,70%,.5)`
+              ctx.lineWidth = 2
+              ctx.stroke()
+              ctx.shadowBlur = 0
+            }
+          }
+        }
+        for (const line of lines) {
+          if (line.points.length < 2) continue
+          path(line.points)
+          ctx.shadowColor = `hsl(${line.hue},90%,65%)`
+          ctx.shadowBlur = 18
+          ctx.strokeStyle = `hsla(${line.hue},95%,75%,.85)`
+          ctx.lineWidth = 2
+          ctx.lineCap = 'round'
+          ctx.stroke()
+          ctx.shadowBlur = 0
+          ctx.strokeStyle = '#f6eaff'
+          ctx.lineWidth = 0.6
+          ctx.stroke()
+        }
+        for (const p of sparkles) {
+          p.x += p.vx
+          p.y += p.vy
+          p.life -= 0.012
+          ctx.globalAlpha = Math.max(0, p.life)
+          ctx.fillStyle = `hsl(${p.hue},90%,80%)`
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, Math.max(0.2, p.life * 1.6), 0, Math.PI * 2)
+          ctx.fill()
+        }
+        sparkles = sparkles.filter((p) => p.life > 0)
+        ctx.globalAlpha = 1
+        for (let i = 0; i < 40; i++) {
+          const x = (((i * 7919) % 997) / 997) * w
+          const y = (((i * 4409) % 991) / 991) * h
+          ctx.fillStyle = `rgba(210,185,242,${0.13 + Math.sin(time + i) * 0.1})`
+          ctx.fillRect(x, y, 1, 1)
+        }
+        ctx.globalCompositeOperation = 'source-over'
+      }
+      function frame(now) {
+        raf = 0
+        if (document.hidden || motion.matches) return
+        if (!last || now - last >= 32) {
+          time += last ? Math.min((now - last) / 1000, 0.06) : 0.033
+          last = now
+          draw()
+        }
+        raf = requestAnimationFrame(frame)
+      }
+      function start() {
+        if (!raf && !document.hidden && !motion.matches)
+          raf = requestAnimationFrame(frame)
+      }
+      document.querySelectorAll('[data-palette]').forEach((button) =>
+        button.addEventListener('click', () => {
+          palette = Number(button.dataset.palette)
+          document
+            .querySelectorAll('[data-palette]')
+            .forEach((b) =>
+              b.setAttribute('aria-pressed', String(b === button))
+            )
+          draw()
+        })
+      )
+      document.getElementById('clear').addEventListener('click', () => {
+        lines = []
+        sparkles = []
+        time += 3
+        draw()
+      })
+      document.getElementById('save').addEventListener('click', () => {
+        try {
+          const link = document.createElement('a')
+          link.download = 'aurora-art.png'
+          link.href = canvas.toDataURL('image/png')
+          link.click()
+        } catch {
+          document.getElementById('toast').textContent = isEnglish
+            ? 'Your browser blocked the download.'
+            : '浏览器未允许下载，请使用截图保存。'
+        }
+      })
+      document.addEventListener('visibilitychange', () => {
+        last = 0
+        start()
+      })
+      motion.addEventListener('change', () => {
+        draw()
+        start()
+      })
+      addEventListener('resize', resize)
+      resize()
+    </script>
+  </body>
+</html>

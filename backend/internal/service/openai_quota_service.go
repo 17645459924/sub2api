@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,7 +31,6 @@ const (
 	chatGPTRateLimitResetURL    = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
 	openaiQuotaUpstreamTimeout  = 20 * time.Second
 	openaiQuotaCodexBeta        = "codex-1"
-	openaiQuotaCodexOriginator  = "Codex Desktop"
 	openaiQuotaCodexLanguageTag = "zh-CN"
 	openaiQuotaSecFetchSite     = "none"
 	openaiQuotaSecFetchMode     = "no-cors"
@@ -44,9 +44,28 @@ const (
 // is unused, so consumers should treat a nil pointer as "no data".
 type OpenAIRateLimitWindow struct {
 	UsedPercent        float64 `json:"used_percent"`
+	UtilizationUnknown bool    `json:"utilization_unknown,omitempty"`
 	LimitWindowSeconds int64   `json:"limit_window_seconds"`
 	ResetAfterSeconds  int64   `json:"reset_after_seconds"`
 	ResetAt            int64   `json:"reset_at"`
+}
+
+// UnmarshalJSON keeps an absent/null measurement distinct from a genuine zero.
+func (w *OpenAIRateLimitWindow) UnmarshalJSON(data []byte) error {
+	type plain OpenAIRateLimitWindow
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var presence struct {
+		UsedPercent *float64 `json:"used_percent"`
+	}
+	if err := json.Unmarshal(data, &presence); err != nil {
+		return err
+	}
+	*w = OpenAIRateLimitWindow(decoded)
+	w.UtilizationUnknown = decoded.UtilizationUnknown || presence.UsedPercent == nil
+	return nil
 }
 
 // OpenAIRateLimit is a rate-limit envelope (primary + optional secondary window).
@@ -96,6 +115,7 @@ type openAICreditsSnapshot struct {
 // Fields not relevant to the quota card are intentionally omitted to keep the
 // surface narrow; full upstream payload preservation is unnecessary.
 type OpenAIQuotaUsage struct {
+	ObservedWindows       []OpenAIQuotaObservation     `json:"observed_windows,omitempty"`
 	UserID                string                       `json:"user_id,omitempty"`
 	AccountID             string                       `json:"account_id,omitempty"`
 	Email                 string                       `json:"email,omitempty"`
@@ -213,6 +233,9 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 		break
 	}
 
+	if payload.AccountID != "" && payload.AccountID != chatGPTAccountID {
+		return nil, infraerrors.New(http.StatusBadGateway, "OPENAI_QUOTA_ACCOUNT_MISMATCH", "upstream quota account does not match the selected ChatGPT workspace")
+	}
 	payload.FetchedAt = time.Now().Unix()
 	details := s.queryResetCreditDetails(callCtx, client, accessToken, chatGPTAccountID, fedRAMP, accountID)
 	if details != nil {
@@ -229,6 +252,11 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 			payload.RateLimitResetCredits.AvailableCount = *details.AvailableCount
 		case details.CreditListPresent:
 			payload.RateLimitResetCredits.AvailableCount = details.AvailableCreditCount
+		}
+	}
+	if s.accountRepo != nil {
+		if account, err := s.accountRepo.GetByID(ctx, accountID); err == nil && codexQuotaAccountScope(account) == chatGPTAccountID {
+			payload.ObservedWindows = observedOpenAIQuotaWindows(account, time.Now())
 		}
 	}
 	return &payload, nil
@@ -444,6 +472,11 @@ func (s *OpenAIQuotaService) resetCredit(ctx context.Context, accountID int64, c
 		break
 	}
 
+	if payload.WindowsReset > 0 && s.accountRepo != nil {
+		if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{"codex_observed_5h": nil, "codex_observed_7d": nil}); err != nil {
+			slog.Warn("openai_quota_observation_invalidate_failed", "account_id", accountID, "error", err)
+		}
+	}
 	slog.Info("openai_quota_reset_success",
 		"account_id", accountID,
 		"code", payload.Code,
@@ -641,12 +674,14 @@ func (s *OpenAIQuotaService) redactQuotaErrorBody(ctx context.Context, accountID
 // buildCodexCommonHeaders sets the request headers expected by the chatgpt.com
 // backend so calls succeed past Cloudflare/WASM checks.
 func buildCodexCommonHeaders(accessToken, chatGPTAccountID string, fedRAMP bool) map[string]string {
+	userAgent, originator := CodexCanonicalAuthIdentity()
 	headers := map[string]string{
 		"authorization":      "Bearer " + accessToken,
 		"chatgpt-account-id": chatGPTAccountID,
 		"openai-beta":        openaiQuotaCodexBeta,
 		"oai-language":       openaiQuotaCodexLanguageTag,
-		"originator":         openaiQuotaCodexOriginator,
+		"originator":         originator,
+		"user-agent":         userAgent,
 		"accept":             "application/json",
 		"sec-fetch-site":     openaiQuotaSecFetchSite,
 		"sec-fetch-mode":     openaiQuotaSecFetchMode,
@@ -699,7 +734,7 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 	// Reuse OpenAICodexUsageSnapshot / Normalize to map primary/secondary windows
 	// to canonical 5h/7d buckets (same logic as probeOpenAICodexSnapshot).
 	snap := &OpenAICodexUsageSnapshot{}
-	if w := spark.PrimaryWindow; w != nil {
+	if w := spark.PrimaryWindow; w != nil && !w.UtilizationUnknown {
 		p := w.UsedPercent
 		snap.PrimaryUsedPercent = &p
 		ra := int(w.ResetAfterSeconds)
@@ -707,7 +742,7 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 		wm := int(w.LimitWindowSeconds / 60)
 		snap.PrimaryWindowMinutes = &wm
 	}
-	if w := spark.SecondaryWindow; w != nil {
+	if w := spark.SecondaryWindow; w != nil && !w.UtilizationUnknown {
 		p := w.UsedPercent
 		snap.SecondaryUsedPercent = &p
 		ra := int(w.ResetAfterSeconds)

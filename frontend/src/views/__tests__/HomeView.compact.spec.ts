@@ -56,7 +56,17 @@ function mountHome(settings: Record<string, unknown> = {}) {
 }
 
 function compactDestination(wrapper: ReturnType<typeof mountHome>) {
-  return wrapper.get('[data-testid="compact-home"]').findComponent(RouterLinkStub).props('to')
+  return wrapper
+    .get('[data-testid="compact-home"]')
+    .findAllComponents(RouterLinkStub)
+    .map((link) => link.props('to'))
+    .find((to) => to !== '/docs/quickstart' && to !== '/model-plaza')
+}
+
+function docDestinations(wrapper: ReturnType<typeof mountHome>) {
+  return wrapper
+    .findAllComponents(RouterLinkStub)
+    .filter((link) => link.props('to') === '/docs/quickstart')
 }
 
 function modelPlazaDestination(wrapper: ReturnType<typeof mountHome>) {
@@ -109,6 +119,12 @@ describe('HomeView compact mode', () => {
 
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
     expect(wrapper.find('.terminal-container').exists()).toBe(true)
+  })
+
+  it('always links documentation to the built-in guide, even when doc_url is empty', () => {
+    expect(docDestinations(mountHome({ compact_home_enabled: true, doc_url: '' }))).toHaveLength(1)
+    expect(docDestinations(mountHome({ compact_home_enabled: true, doc_url: 'https://old.example/docs' }))).toHaveLength(1)
+    expect(docDestinations(mountHome({ doc_url: '' }))).toHaveLength(2)
   })
 
   it('links unauthenticated visitors to login', () => {

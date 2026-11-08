@@ -609,6 +609,7 @@ readLoop:
 			message = normalized
 		}
 
+		s.observeCodexQuotaEvent(account, message)
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
 			continue

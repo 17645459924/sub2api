@@ -35,7 +35,7 @@
             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
-        {{ t('admin.accounts.openaiQuotaReset.count') }}<span v-if="data"> {{ availableResetCount }}</span>
+        {{ t('admin.accounts.openaiQuotaReset.count') }}<span v-if="data"> {{ data.rate_limit_reset_credits ? availableResetCount : t('usage.quotaUnknown') }}</span>
       </button>
 
       <button
@@ -195,10 +195,12 @@ import OpenAIReferralCell from '@/components/account/OpenAIReferralCell.vue'
 
 const props = defineProps<{
   account: Account
+  liveQuota?: { accountID: number; quota: OpenAIQuotaUsage } | null
 }>()
 
 const emit = defineEmits<{
   'account-updated': [account: Account]
+  'quota-updated': [quota: OpenAIQuotaUsage]
 }>()
 
 const { t } = useI18n()
@@ -450,6 +452,7 @@ const handleQuery = async () => {
     // the live count is always adopted. Only the persisted view is left alone,
     // which keeps the displayed expirations consistent with what is stored.
     data.value = result
+    emit('quota-updated', result)
     if (result.cache_persisted) {
       cachedData.value = result
     } else {
@@ -492,6 +495,7 @@ const confirmReset = async () => {
     showResetCreditDetails.value = false
     if (result.cache_refreshed && result.quota) {
       data.value = result.quota
+      emit('quota-updated', result.quota)
       cachedData.value = result.quota
     } else {
       // A credit was consumed but the post-reset count could not be read back.
@@ -536,6 +540,19 @@ watch(
     showResetConfirm.value = false
     showResetCreditDetails.value = false
   }
+)
+
+// A window refresh and a points refresh read the same endpoint. Adopt the
+// complete response so bars, balance and reset count use one generation.
+watch(
+  () => props.liveQuota,
+  (live) => {
+    if (!live || live.accountID !== props.account.id) return
+    data.value = live.quota
+    updateCredits(live.quota)
+    error.value = null
+  },
+  { immediate: true }
 )
 
 watch(

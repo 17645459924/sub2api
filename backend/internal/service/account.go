@@ -359,7 +359,12 @@ func (a *Account) IsGeminiThirdPartyAPIKey() bool {
 }
 
 func (a *Account) CanGetUsage() bool {
-	return a.Type == AccountTypeOAuth
+	if a.Type == AccountTypeOAuth {
+		return true
+	}
+	// Stored scope metadata is optional and can be stale. Let the upstream
+	// usage endpoint determine whether an Anthropic setup token is authorized.
+	return a.Platform == PlatformAnthropic && a.Type == AccountTypeSetupToken
 }
 
 func (a *Account) GetCredential(key string) string {

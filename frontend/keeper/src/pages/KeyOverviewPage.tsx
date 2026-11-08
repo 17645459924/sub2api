@@ -1,0 +1,461 @@
+import { ChartLifecycleProvider, useChartRefresh, type ChartRefreshSignal } from '@/components/usage/charts/chartLifecycle';
+import { UsageComparisonCharts } from '@/components/usage/UsageComparisonCharts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ApiError, fetchKeyOverview, fetchKeyOverviewRealtime, isCostsBusy, isUsageRangeBoundsConflict } from '@/lib/api';
+import type { AuthSessionAPIKeySummary, OverviewRealtimeBlock, OverviewRealtimeWindow, UsageCustomRange, UsageOverviewResponse, UsageTimeRange } from '@/lib/types';
+import { KeyViewerShell } from '@/features/key-viewer/KeyViewerShell';
+import type { KeyViewerPath } from '@/features/key-viewer/navigation';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { buildUsageStatsQueryKey, useThemeStore } from '@/stores';
+import {
+  OverviewRealtimePanel,
+  RecentActivityPanel,
+  StatCards,
+  TimeRangeControl,
+  useRecentActivityWindow,
+  useSparklines,
+  useUsageActivityData,
+  useUsageComparisonsData,
+} from '@/components/usage';
+import type { UsageOverviewPayload } from '@/components/usage/hooks/useUsageData';
+import { getCurrentOverviewUsage, getDailyAverageCardUsage, getOverviewDisplayLoading, isDailyAverageRange } from '@/utils/usage/overview';
+import { clampStoredUsageRangeStateToCurrentBounds, resolveUsageRangeRecoveryTimeZone, type StoredUsageRangeState } from '@/utils/usage/customRange';
+import { buildUsageRangeQuery } from '@/utils/usage/rangeQuery';
+import { loadKeyViewerTimeRange, persistKeyViewerTimeRange } from '@/features/key-viewer/timeRange';
+import styles from '@/features/key-viewer/KeyViewerShell.module.scss';
+
+const OVERVIEW_REALTIME_WINDOW_STORAGE_KEY = 'cli-proxy-usage-overview-realtime-window-v1';
+const DEFAULT_REALTIME_WINDOW: OverviewRealtimeWindow = '15m';
+const KEY_OVERVIEW_REALTIME_VISIBLE_DIMENSIONS = ['models'] as const;
+const KEY_OVERVIEW_AUTO_REFRESH_INTERVAL_MS = 10_000;
+
+const loadTimeRange = (): StoredUsageRangeState => {
+  return loadKeyViewerTimeRange();
+};
+
+const isOverviewRealtimeWindow = (value: unknown): value is OverviewRealtimeWindow => (
+  value === '15m' || value === '30m' || value === '60m'
+);
+
+const loadRealtimeWindow = (): OverviewRealtimeWindow => {
+  try {
+    if (typeof localStorage === 'undefined') return DEFAULT_REALTIME_WINDOW;
+    const raw = localStorage.getItem(OVERVIEW_REALTIME_WINDOW_STORAGE_KEY);
+    return isOverviewRealtimeWindow(raw) ? raw : DEFAULT_REALTIME_WINDOW;
+  } catch {
+    return DEFAULT_REALTIME_WINDOW;
+  }
+};
+
+type KeyOverviewAutoRefreshDocument = Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+
+type KeyOverviewAutoRefreshOptions = {
+  refreshOverview: () => void | Promise<void>;
+  onRefreshError?: (error: unknown) => void;
+  documentRef?: KeyOverviewAutoRefreshDocument;
+  intervalMs?: number;
+};
+
+type KeyOverviewLoadOptions = {
+  skipIfInFlight?: boolean;
+  replayCharts?: boolean;
+};
+
+type KeyOverviewRequestStartOptions = {
+  currentController: AbortController | null;
+  skipIfInFlight?: boolean;
+};
+
+export const startKeyOverviewRequest = ({
+  currentController,
+  skipIfInFlight,
+}: KeyOverviewRequestStartOptions): { controller: AbortController | null; skipped: boolean } => {
+  if (currentController && skipIfInFlight) {
+    return { controller: null, skipped: true };
+  }
+  currentController?.abort();
+  return { controller: new AbortController(), skipped: false };
+};
+
+export const scheduleKeyOverviewAutoRefresh = ({
+  refreshOverview,
+  onRefreshError,
+  documentRef,
+  intervalMs = KEY_OVERVIEW_AUTO_REFRESH_INTERVAL_MS,
+}: KeyOverviewAutoRefreshOptions) => {
+  const targetDocument = documentRef ?? (typeof document === 'undefined' ? undefined : document);
+  if (!targetDocument) {
+    return () => undefined;
+  }
+
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const stopTimer = () => {
+    if (timer === undefined) return;
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const runRefresh = () => {
+    Promise.resolve(refreshOverview()).catch((nextError: unknown) => {
+      onRefreshError?.(nextError);
+    });
+  };
+  const refreshIfVisible = () => {
+    if (targetDocument.visibilityState === 'hidden') {
+      stopTimer();
+      return;
+    }
+    runRefresh();
+  };
+  const startTimer = () => {
+    if (timer !== undefined) return;
+    timer = setInterval(refreshIfVisible, intervalMs);
+  };
+  const handleVisibilityChange = () => {
+    if (targetDocument.visibilityState === 'hidden') {
+      stopTimer();
+      return;
+    }
+    runRefresh();
+    stopTimer();
+    startTimer();
+  };
+
+  if (targetDocument.visibilityState !== 'hidden') {
+    startTimer();
+  }
+  targetDocument.addEventListener('visibilitychange', handleVisibilityChange);
+
+  return () => {
+    stopTimer();
+    targetDocument.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+};
+
+export interface KeyOverviewPageProps {
+  page?: 'overview' | 'realtime';
+  apiKey?: AuthSessionAPIKeySummary;
+  onNavigate: (path: KeyViewerPath) => void;
+  onAuthRequired?: () => void;
+}
+
+export function KeyOverviewPage({ page = 'overview', apiKey, onNavigate, onAuthRequired }: KeyOverviewPageProps) {
+  const { t } = useTranslation();
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
+  const isDark = resolvedTheme === 'dark';
+  const [timeRangeState, setTimeRangeState] = useState<StoredUsageRangeState>(loadTimeRange);
+  const { range: timeRange, customRange } = timeRangeState;
+  const [realtimeWindow, setRealtimeWindow] = useState<OverviewRealtimeWindow>(loadRealtimeWindow);
+  const [usage, setUsage] = useState<UsageOverviewPayload | null>(null);
+  const [loadedUsageRange, setLoadedUsageRange] = useState<string | null>(null);
+  const [realtime, setRealtime] = useState<OverviewRealtimeBlock | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [realtimeLoading, setRealtimeLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [realtimeError, setRealtimeError] = useState('');
+  const [manualRefreshLoading, setManualRefreshLoading] = useState(false);
+  const [overviewChartRefresh, markOverviewLoaded] = useChartRefresh();
+  const [comparisonChartRefresh, markComparisonsLoaded] = useChartRefresh();
+  const [realtimeChartRefresh, setRealtimeChartRefresh] = useState<ChartRefreshSignal>();
+  const overviewRequestControllerRef = useRef<AbortController | null>(null);
+  const realtimeRequestControllerRef = useRef<AbortController | null>(null);
+  const loadedUsageAPIKeyRef = useRef<AuthSessionAPIKeySummary | undefined>(undefined);
+  const loadedRealtimeAPIKeyRef = useRef<AuthSessionAPIKeySummary | undefined>(undefined);
+  const usageRangeQuery = useMemo(() => buildUsageRangeQuery({
+    range: timeRange,
+    customUnit: customRange?.unit,
+    customStart: customRange?.start,
+    customEnd: customRange?.end,
+  }), [customRange?.end, customRange?.start, customRange?.unit, timeRange]);
+  const usageRangeQueryKey = usageRangeQuery.valid ? buildUsageStatsQueryKey(usageRangeQuery) : null;
+  // 暂缓期间仅保留同范围、同 Viewer 的已提交费用，避免旧范围或旧账号显示为当前结果。
+  const visibleUsage = loadedUsageAPIKeyRef.current === apiKey
+    ? getCurrentOverviewUsage(usage, usageRangeQueryKey, loadedUsageRange)
+    : null;
+  const visibleRealtime = loadedRealtimeAPIKeyRef.current === apiKey && realtime?.window === realtimeWindow ? realtime : null;
+  const {
+    request: activityRangeRequest,
+    manualWindow: manualActivityWindow,
+    setWindow: setActivityWindow,
+  } = useRecentActivityWindow(usageRangeQuery);
+  const {
+    activity,
+    activityMatchesRequest,
+    loading: activityLoading,
+    error: activityError,
+    requestIdentity: activityRequestIdentity,
+    loadActivity,
+  } = useUsageActivityData({
+    viewer: 'key',
+    request: activityRangeRequest,
+    enabled: page === 'overview' && usageRangeQuery.valid,
+    onAuthRequired,
+  });
+  const activityWindow = manualActivityWindow ?? activity?.window ?? null;
+  const activityWindowIsCurrent = manualActivityWindow !== null || activityMatchesRequest;
+  const rangeTimeZone = visibleUsage?.timezone ?? timeRangeState.timeZone;
+  const rangeRecoveryTimeZone = resolveUsageRangeRecoveryTimeZone(timeRangeState, visibleUsage?.timezone);
+  const recoverRangeBoundsConflict = useCallback((error: unknown) => {
+    if (!isUsageRangeBoundsConflict(error)) return false;
+    const timeZone = rangeRecoveryTimeZone?.trim();
+    if (!timeZone) return false;
+    const nextState = clampStoredUsageRangeStateToCurrentBounds(timeRangeState, {
+      nowMs: Date.now(),
+      timeZone,
+    });
+    if (nextState === timeRangeState) return false;
+    setTimeRangeState(nextState);
+    return true;
+  }, [rangeRecoveryTimeZone, timeRangeState]);
+  const {
+    comparisons: overviewComparisons,
+    loading: comparisonsLoading,
+    error: comparisonsError,
+    loadComparisons,
+  } = useUsageComparisonsData({
+    onAuthRequired,
+    onRangeBoundsConflict: recoverRangeBoundsConflict,
+    enabled: page === 'overview' && usageRangeQuery.valid,
+    keyViewer: true,
+    viewerIdentity: apiKey,
+    range: timeRange,
+    customUnit: customRange?.unit,
+    customStart: customRange?.start,
+    customEnd: customRange?.end,
+  });
+  const handleTimeRangeChange = useCallback((range: UsageTimeRange, nextCustomRange?: UsageCustomRange) => {
+    let nextState: StoredUsageRangeState;
+    if (range === 'custom' && nextCustomRange) {
+      nextState = { range, customRange: nextCustomRange, timeZone: rangeTimeZone };
+    } else {
+      nextState = { ...timeRangeState, range };
+    }
+    setTimeRangeState(nextState);
+    // 切换页面可能紧接着发生，先同步写入共享缓存，再等待状态 effect。
+    persistKeyViewerTimeRange(nextState);
+  }, [rangeTimeZone, timeRangeState]);
+
+  const loadOverview = useCallback(async (options: KeyOverviewLoadOptions = {}) => {
+    if (!usageRangeQuery.valid) return;
+    const { controller, skipped } = startKeyOverviewRequest({
+      currentController: overviewRequestControllerRef.current,
+      skipIfInFlight: options.skipIfInFlight,
+    });
+    if (skipped || !controller) return;
+    overviewRequestControllerRef.current = controller;
+    setLoading(true);
+    setError('');
+    try {
+      const overview = await fetchKeyOverview(usageRangeQuery, controller.signal);
+      if (overviewRequestControllerRef.current !== controller) return;
+      loadedUsageAPIKeyRef.current = apiKey;
+      setUsage(overview as UsageOverviewResponse as UsageOverviewPayload);
+      setLoadedUsageRange(usageRangeQueryKey);
+      if (options.replayCharts) markOverviewLoaded(overview);
+    } catch (nextError) {
+      if (controller.signal.aborted) return;
+      if (recoverRangeBoundsConflict(nextError)) return;
+      if (nextError instanceof ApiError && nextError.status === 401) {
+        onAuthRequired?.();
+        return;
+      }
+      setError(isCostsBusy(nextError) ? 'COSTS_BUSY' : nextError instanceof Error ? nextError.message : 'KEY_OVERVIEW_LOAD_FAILED');
+    } finally {
+      if (overviewRequestControllerRef.current === controller) {
+        setLoading(false);
+        overviewRequestControllerRef.current = null;
+      }
+    }
+  }, [apiKey, onAuthRequired, recoverRangeBoundsConflict, usageRangeQuery, usageRangeQueryKey, markOverviewLoaded]);
+
+  const loadRealtime = useCallback(async (options: KeyOverviewLoadOptions = {}) => {
+    const { controller, skipped } = startKeyOverviewRequest({
+      currentController: realtimeRequestControllerRef.current,
+      skipIfInFlight: options.skipIfInFlight,
+    });
+    if (skipped || !controller) return;
+    realtimeRequestControllerRef.current = controller;
+    setRealtimeLoading(true);
+    setRealtimeError('');
+    try {
+      const nextRealtime = await fetchKeyOverviewRealtime({
+        window: realtimeWindow,
+        signal: controller.signal,
+      });
+      if (realtimeRequestControllerRef.current !== controller) return;
+      loadedRealtimeAPIKeyRef.current = apiKey;
+      setRealtime(nextRealtime);
+      if (options.replayCharts) setRealtimeChartRefresh((previous) => ({ source: nextRealtime, revision: (previous?.revision ?? 0) + 1 }));
+    } catch (nextError) {
+      if (controller.signal.aborted) return;
+      if (nextError instanceof ApiError && nextError.status === 401) {
+        onAuthRequired?.();
+        return;
+      }
+      setRealtimeError(isCostsBusy(nextError) ? 'COSTS_BUSY' : 'KEY_OVERVIEW_REALTIME_LOAD_FAILED');
+    } finally {
+      if (realtimeRequestControllerRef.current === controller) {
+        setRealtimeLoading(false);
+        realtimeRequestControllerRef.current = null;
+      }
+    }
+  }, [apiKey, onAuthRequired, realtimeWindow]);
+
+  useEffect(() => {
+    if (page !== 'overview') return;
+    void loadOverview();
+    return () => {
+      overviewRequestControllerRef.current?.abort();
+      overviewRequestControllerRef.current = null;
+    };
+  }, [loadOverview, page]);
+
+  useEffect(() => {
+    if (page !== 'realtime') return;
+    void loadRealtime();
+    return () => {
+      realtimeRequestControllerRef.current?.abort();
+      realtimeRequestControllerRef.current = null;
+    };
+  }, [loadRealtime, page]);
+
+  const refreshKeyOverview = useCallback(async (options: KeyOverviewLoadOptions = {}) => {
+    if (page === 'realtime') {
+      await loadRealtime(options);
+      return;
+    }
+    await Promise.all([loadOverview(options), loadActivity(options), loadComparisons({ skipIfInFlight: options.skipIfInFlight, onLoaded: options.replayCharts ? markComparisonsLoaded : undefined })]);
+  }, [loadActivity, loadComparisons, loadOverview, loadRealtime, page, markComparisonsLoaded]);
+
+  const handleAutoRefreshError = useCallback((nextError: unknown) => {
+    if (nextError instanceof ApiError && nextError.status === 401) {
+      onAuthRequired?.();
+      return;
+    }
+    setError(isCostsBusy(nextError) ? 'COSTS_BUSY' : 'KEY_OVERVIEW_LOAD_FAILED');
+  }, [onAuthRequired]);
+
+  useEffect(() => scheduleKeyOverviewAutoRefresh({
+    refreshOverview: () => refreshKeyOverview({ skipIfInFlight: true }),
+    onRefreshError: handleAutoRefreshError,
+    intervalMs: KEY_OVERVIEW_AUTO_REFRESH_INTERVAL_MS,
+  }), [handleAutoRefreshError, refreshKeyOverview]);
+
+  useEffect(() => {
+    persistKeyViewerTimeRange(timeRangeState);
+  }, [timeRangeState]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OVERVIEW_REALTIME_WINDOW_STORAGE_KEY, realtimeWindow);
+    } catch {
+      // ignore storage failures
+    }
+  }, [realtimeWindow]);
+
+  const overviewDisplayLoading = getOverviewDisplayLoading({ loading: loading || error === 'COSTS_BUSY', hasUsage: Boolean(visibleUsage) });
+  const currentOverviewUsage = visibleUsage;
+  const reserveDailyAverageCard = isDailyAverageRange({
+    range: timeRange,
+    customUnit: customRange?.unit,
+    customStart: customRange?.start,
+    customEnd: customRange?.end,
+  });
+  const dailyAverageCardUsage = getDailyAverageCardUsage(currentOverviewUsage, visibleUsage, reserveDailyAverageCard, loading);
+  const {
+    requestsSparkline,
+    tokensSparkline,
+    rpmSparkline,
+    tpmSparkline,
+    cacheReadRateSparkline,
+    costSparkline,
+  } = useSparklines({ usage: visibleUsage, loading });
+
+  const refreshDisabled = manualRefreshLoading;
+  const handleManualRefresh = useCallback(async () => {
+    if (refreshDisabled) return;
+    setManualRefreshLoading(true);
+    try {
+      await refreshKeyOverview({ replayCharts: true });
+    } finally {
+      setManualRefreshLoading(false);
+    }
+  }, [refreshDisabled, refreshKeyOverview]);
+
+  const displayError = error === 'COSTS_BUSY'
+    ? t('key_overview.costs_busy')
+    : error === 'KEY_OVERVIEW_LOAD_FAILED'
+    ? t('key_overview.load_failed')
+    : error;
+  const displayRealtimeError = realtimeError === 'COSTS_BUSY'
+    ? t('key_overview.costs_busy')
+    : realtimeError ? t('usage_stats.overview_realtime_load_failed')
+    : '';
+  const displayComparisonsError = comparisonsError === 'COSTS_BUSY' ? t('key_overview.costs_busy') : comparisonsError;
+
+
+  return (
+    <KeyViewerShell
+      activePage={page}
+      apiKey={apiKey}
+      loading={page === 'overview' && loading && !visibleUsage}
+      filters={page === 'overview' ? [<TimeRangeControl key="range" value={timeRange} customRange={customRange} timeZone={rangeTimeZone} onChange={handleTimeRangeChange} ariaLabel={t('usage_stats.range_filter')} labelInsideTrigger />] : []}
+      onRefresh={() => void handleManualRefresh()}
+      refreshing={manualRefreshLoading}
+      refreshDisabled={refreshDisabled}
+      onNavigate={onNavigate}
+      onAuthRequired={onAuthRequired}
+    >
+      {page === 'overview' && <>
+      {(displayError || displayComparisonsError) && <div className={styles.errorBox}>{displayError || displayComparisonsError}</div>}
+
+      <ChartLifecycleProvider queryKey={JSON.stringify([usageRangeQueryKey, apiKey?.id])} source={visibleUsage} refreshSignal={overviewChartRefresh}>
+        <StatCards
+        usage={visibleUsage}
+        loading={overviewDisplayLoading}
+        dailyAverageUsage={dailyAverageCardUsage}
+        reserveDailyAverage={reserveDailyAverageCard}
+        sparklines={{
+          requests: requestsSparkline,
+          tokens: tokensSparkline,
+          rpm: rpmSparkline,
+          tpm: tpmSparkline,
+          cacheReadRate: cacheReadRateSparkline,
+          cost: costSparkline,
+        }}
+      />
+      </ChartLifecycleProvider>
+
+      <RecentActivityPanel
+        activity={activity}
+        loading={activityLoading}
+        error={activityError}
+        window={activityWindow}
+        windowIsCurrent={activityWindowIsCurrent}
+        requestIdentity={activityRequestIdentity}
+        onWindowChange={setActivityWindow}
+      />
+
+      <ChartLifecycleProvider queryKey={JSON.stringify([usageRangeQueryKey, apiKey?.id])} source={overviewComparisons} refreshSignal={comparisonChartRefresh}>
+        <UsageComparisonCharts isDark={resolvedTheme === 'dark'} isMobile={isMobile} comparisons={overviewComparisons ?? undefined} loading={comparisonsLoading || (comparisonsError === 'COSTS_BUSY' && !overviewComparisons)} keyViewer />
+      </ChartLifecycleProvider>
+      </>}
+
+      {page === 'realtime' && <OverviewRealtimePanel
+        realtime={visibleRealtime ?? undefined}
+        modelSpeedPreferenceScope={apiKey?.id ? `key-viewer:${apiKey.id}` : null}
+        modelSpeedQueryKey={JSON.stringify([realtimeWindow, apiKey?.id ?? null])}
+        chartRefreshSignal={realtimeChartRefresh}
+        loading={realtimeLoading || (realtimeError === 'COSTS_BUSY' && !visibleRealtime)}
+        error={displayRealtimeError}
+        window={realtimeWindow}
+        onWindowChange={setRealtimeWindow}
+        isDark={isDark}
+        isMobile={isMobile}
+        timezone={visibleRealtime?.timezone ?? visibleUsage?.timezone}
+        visibleDimensions={KEY_OVERVIEW_REALTIME_VISIBLE_DIMENSIONS}
+      />}
+    </KeyViewerShell>
+  );
+}

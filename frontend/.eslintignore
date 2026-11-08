@@ -12,3 +12,7 @@ dist/
 # 忽略缓存
 .cache/
 .vite/
+
+# Vendored React app uses keeper/eslint.config.js
+keeper/
+public/keeper/

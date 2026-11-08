@@ -794,6 +794,14 @@ const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, e
 
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
   if (usageBatchByAccountId.value[String(accountID)] === usage) return
+  // A direct query supersedes older batches and must also replace their cache.
+  pendingUsageBatchIds.delete(accountID)
+  usageBatchRequestTokenByAccountId.value = {
+    ...usageBatchRequestTokenByAccountId.value,
+    [String(accountID)]: ++usageBatchRequestToken
+  }
+  usageBatchCache.set(accountID, { data: usage, ts: Date.now() })
+  setUsageBatchLoading(accountID, false)
   setUsageBatchState(accountID, usage, null)
 }
 

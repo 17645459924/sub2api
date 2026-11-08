@@ -13,6 +13,27 @@ vi.mock('vue-i18n', async () => {
 })
 
 describe('UsageProgressBar', () => {
+  it('shows an explicit absent window without a percent or bar, then expires it', async () => {
+    const wrapper = mount(UsageProgressBar, { props: {
+      label: '5h', utilization: 0, unknown: true, notApplicable: true, color: 'indigo', sampleExpiresAt: Date.now() / 1000 + 300
+    } })
+    expect(wrapper.text()).toContain('usage.quotaNotApplicable')
+    expect(wrapper.text()).not.toContain('0%')
+    expect(wrapper.find('[style*="width"]').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(300000)
+    expect(wrapper.text()).toContain('usage.quotaUnknown')
+    expect(wrapper.text()).not.toContain('usage.quotaNotApplicable')
+    wrapper.unmount()
+  })
+  it('shows unknown without a fabricated percentage or availability time', () => {
+    const wrapper = mount(UsageProgressBar, { props: {
+      label: '5h', utilization: 0, unknown: true, showNowWhenIdle: true, color: 'indigo'
+    } })
+    expect(wrapper.text()).toContain('usage.quotaUnknown')
+    expect(wrapper.text()).not.toContain('0%')
+    expect(wrapper.text()).not.toContain('usage.resetNow')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-17T00:00:00Z'))
@@ -20,6 +41,18 @@ describe('UsageProgressBar', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('automatically hides a traffic sample after its freshness deadline', async () => {
+    const wrapper = mount(UsageProgressBar, { props: {
+      label: '5h', utilization: 42, color: 'indigo', resetsAt: '2026-03-17T02:30:00Z',
+      sampleExpiresAt: Date.now() / 1000 + 300
+    } })
+    expect(wrapper.text()).toContain('42%')
+    await vi.advanceTimersByTimeAsync(300000)
+    expect(wrapper.text()).toContain('usage.quotaUnknown')
+    expect(wrapper.text()).not.toContain('42%')
+    wrapper.unmount()
   })
 
   it('showNowWhenIdle=true 且利用率为 0 但有未来 resetsAt 时显示倒计时', () => {

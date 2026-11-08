@@ -1,8 +1,8 @@
 <template>
-  <div class="space-y-3">
+  <div class="min-w-0 space-y-3">
     <!-- 一级:平台 -->
     <div class="flex items-start gap-2">
-      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
+      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
         {{ t('modelPlaza.filters.platformLabel') }}
       </span>
       <div class="flex flex-wrap items-center gap-2">
@@ -10,6 +10,7 @@
           v-for="p in ['all', ...platforms]"
           :key="`platform-${p}`"
           type="button"
+          :aria-pressed="platform === p"
           class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
           :class="p === 'all' ? chipClass(platform === 'all') : platform === p ? 'chip-tinted-active' : 'chip-tinted'"
           :style="p === 'all' ? undefined : { '--chip-accent': platformAccentColor(p) }"
@@ -24,7 +25,7 @@
 
     <!-- 二级:分组(按所属平台着色,当前组合下无结果的置灰) -->
     <div class="flex items-start gap-2">
-      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
+      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
         {{ t('modelPlaza.filters.groupLabel') }}
       </span>
       <div class="flex flex-wrap items-center gap-2">
@@ -32,6 +33,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
           :class="chipClass(groupId === 'all')"
+          :aria-pressed="groupId === 'all'"
           @click="$emit('update:groupId', 'all')"
         >
           {{ t('modelPlaza.filters.all') }}
@@ -42,6 +44,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
           :class="groupId === g.id ? 'chip-tinted-active' : 'chip-tinted'"
+          :aria-pressed="groupId === g.id"
           :style="{ '--chip-accent': platformAccentColor(g.platform) }"
           :disabled="!groupEnabled(g)"
           @click="$emit('update:groupId', g.id)"
@@ -53,7 +56,7 @@
 
     <!-- 三级:倍率(当前组合下不存在的置灰) -->
     <div class="flex items-start gap-2">
-      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
+      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
         {{ t('modelPlaza.filters.rateLabel') }}
       </span>
       <div class="flex flex-wrap items-center gap-2">
@@ -61,6 +64,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
           :class="chipClass(rate === 'all')"
+          :aria-pressed="rate === 'all'"
           @click="$emit('update:rate', 'all')"
         >
           {{ t('modelPlaza.filters.all') }}
@@ -71,6 +75,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 font-mono text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
           :class="chipClass(rate === r)"
+          :aria-pressed="rate === r"
           :disabled="!rateEnabled(r)"
           @click="$emit('update:rate', r)"
         >
@@ -81,14 +86,14 @@
 
     <!-- 四级:模型名搜索(纯前端过滤) -->
     <div class="flex flex-wrap items-start gap-2">
-      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
+      <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
         {{ t('modelPlaza.filters.modelLabel') }}
       </span>
       <div class="relative w-full sm:w-72">
         <Icon
           name="search"
           size="sm"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-dark-400"
         />
         <input
           :value="search"
@@ -100,7 +105,7 @@
         <button
           v-if="search"
           type="button"
-          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:text-dark-500 dark:hover:text-gray-300"
+          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 transition-colors hover:text-gray-600 dark:text-dark-400 dark:hover:text-gray-300"
           @click="$emit('update:search', '')"
         >
           <Icon name="x" size="xs" class="h-3.5 w-3.5" />
@@ -171,17 +176,30 @@ function rateEnabled(r: number): boolean {
 
 function chipClass(active: boolean): string {
   return active
-    ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-sm shadow-primary-500/30'
+    ? 'chip-active'
     : 'bg-white text-gray-600 ring-1 ring-inset ring-gray-200 enabled:hover:bg-gray-50 enabled:hover:text-gray-900 enabled:hover:ring-gray-300 dark:bg-dark-800/60 dark:text-dark-300 dark:ring-dark-700 dark:enabled:hover:bg-dark-800 dark:enabled:hover:text-white'
 }
 </script>
 
 <style scoped>
+.chip-active {
+  @apply bg-primary-700 text-white shadow-sm;
+}
+
+.chip-active:not(:disabled):hover {
+  @apply bg-primary-800;
+}
+
+button:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-primary-700 dark:outline-primary-300;
+}
+
 /* 平台/分组 chip 的配色统一从 --chip-accent(平台主色)派生,新增平台无需扩展样式。
    激活态与非激活态在模板上互斥挂载,避免选择器优先级互相覆盖。 */
 .chip-tinted {
-  color: var(--chip-accent);
-  color: color-mix(in srgb, var(--chip-accent) 78%, black);
+  color: #334155;
+  color: color-mix(in srgb, var(--chip-accent) 60%, black);
+  background-color: #f1f5f9;
   background-color: color-mix(in srgb, var(--chip-accent) 9%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-accent) 25%, transparent);
 }
@@ -191,7 +209,9 @@ function chipClass(active: boolean): string {
 }
 
 .dark .chip-tinted {
+  color: #e2e8f0;
   color: color-mix(in srgb, var(--chip-accent) 72%, white);
+  background-color: #1e293b;
   background-color: color-mix(in srgb, var(--chip-accent) 12%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-accent) 30%, transparent);
 }
@@ -202,20 +222,20 @@ function chipClass(active: boolean): string {
 
 .chip-tinted-active {
   color: #fff;
-  background-color: var(--chip-accent);
-  background-color: color-mix(in srgb, var(--chip-accent) 85%, black);
+  background-color: #334155;
+  background-color: color-mix(in srgb, var(--chip-accent) 55%, black);
   box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--chip-accent) 35%, transparent);
 }
 
 .chip-tinted-active:not(:disabled):hover {
-  background-color: color-mix(in srgb, var(--chip-accent) 75%, black);
+  background-color: color-mix(in srgb, var(--chip-accent) 45%, black);
 }
 
 .dark .chip-tinted-active {
-  background-color: color-mix(in srgb, var(--chip-accent) 80%, transparent);
+  background-color: color-mix(in srgb, var(--chip-accent) 55%, black);
 }
 
 .dark .chip-tinted-active:not(:disabled):hover {
-  background-color: var(--chip-accent);
+  background-color: color-mix(in srgb, var(--chip-accent) 45%, black);
 }
 </style>

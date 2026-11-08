@@ -41,7 +41,7 @@
       </span>
 
       <!-- Progress bar container -->
-      <div class="h-1.5 w-8 shrink-0 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+      <div v-if="!absentWindow" class="h-1.5 w-8 shrink-0 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
         <div
           :class="['h-full transition-all duration-300', barClass]"
           :style="{ width: barWidth }"
@@ -49,7 +49,7 @@
       </div>
 
       <!-- Percentage -->
-      <span :class="['w-[32px] shrink-0 text-right text-[10px] font-medium', textClass]">
+      <span :title="absentWindow ? t('usage.quotaNotApplicableHint') : unknownMeasurement ? t('usage.quotaUnknownHint') : undefined" :class="[absentWindow ? '' : 'w-[32px]', 'shrink-0 text-right text-[10px] font-medium', textClass]">
         {{ displayPercent }}
       </span>
 
@@ -72,6 +72,9 @@ const props = withDefaults(
   defineProps<{
     label: string
     utilization: number // Percentage (0-100+)
+    unknown?: boolean
+    notApplicable?: boolean
+    sampleExpiresAt?: number
     resetsAt?: string | null
     color: 'indigo' | 'emerald' | 'purple' | 'amber'
     windowStats?: WindowStats | null
@@ -89,6 +92,8 @@ const { t } = useI18n()
 // Reactive clock for countdown — only runs when a reset time is shown,
 // to avoid creating many idle timers across large account lists.
 const now = ref(new Date())
+const absentWindow = computed(() => Boolean(props.notApplicable && !(props.sampleExpiresAt != null && now.value.getTime() >= props.sampleExpiresAt * 1000)))
+const unknownMeasurement = computed(() => Boolean(props.unknown || (props.sampleExpiresAt != null && now.value.getTime() >= props.sampleExpiresAt * 1000)))
 const { pause: pauseClock, resume: resumeClock } = useIntervalFn(
   () => {
     now.value = new Date()
@@ -96,16 +101,16 @@ const { pause: pauseClock, resume: resumeClock } = useIntervalFn(
   60_000,
   { immediate: false },
 )
-if (props.resetsAt) resumeClock()
+if (props.resetsAt || props.sampleExpiresAt) resumeClock()
 const refreshClockWhenVisible = () => {
-  if (!document.hidden && props.resetsAt) now.value = new Date()
+  if (!document.hidden && (props.resetsAt || props.sampleExpiresAt)) now.value = new Date()
 }
 onMounted(() => document.addEventListener('visibilitychange', refreshClockWhenVisible))
 onUnmounted(() => document.removeEventListener('visibilitychange', refreshClockWhenVisible))
 watch(
-  () => props.resetsAt,
-  (val) => {
-    if (val) {
+  () => [props.resetsAt, props.sampleExpiresAt] as const,
+  ([resetAt, expires]) => {
+    if (resetAt || expires) {
       now.value = new Date()
       resumeClock()
     } else {
@@ -135,6 +140,7 @@ const labelSizeClass = computed(() =>
 
 // Progress bar color based on utilization
 const barClass = computed(() => {
+  if (unknownMeasurement.value) return 'bg-gray-400'
   if (props.remainingCapacity) {
     if (props.utilization <= 20) {
       return 'bg-red-500'
@@ -154,6 +160,7 @@ const barClass = computed(() => {
 
 // Text color based on utilization
 const textClass = computed(() => {
+  if (unknownMeasurement.value) return 'text-gray-500 dark:text-gray-400'
   if (props.remainingCapacity) {
     if (props.utilization <= 20) {
       return 'text-red-600 dark:text-red-400'
@@ -173,11 +180,14 @@ const textClass = computed(() => {
 
 // Bar width (capped at 100%)
 const barWidth = computed(() => {
+  if (unknownMeasurement.value) return '0%'
   return `${Math.min(Math.max(props.utilization, 0), 100)}%`
 })
 
 // Display percentage (cap at 999% for readability)
 const displayPercent = computed(() => {
+  if (absentWindow.value) return t('usage.quotaNotApplicable')
+  if (unknownMeasurement.value) return t('usage.quotaUnknown')
   const percent = Math.round(
     props.remainingCapacity
       ? Math.min(Math.max(props.utilization, 0), 100)
@@ -187,6 +197,8 @@ const displayPercent = computed(() => {
 })
 
 const shouldShowResetTime = computed(() => {
+  if (absentWindow.value) return false
+  if (unknownMeasurement.value) return false
   if (props.resetsAt) return true
   return Boolean(props.showNowWhenIdle && props.utilization <= 0)
 })

@@ -989,7 +989,7 @@ func (s *OpenAIGatewayService) resolveOpenAIChannelPricing(ctx context.Context, 
 // ParseCodexRateLimitHeaders extracts Codex usage limits from response headers.
 // Exported for use in ratelimit_service when handling OpenAI 429 responses.
 func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
-	snapshot := &OpenAICodexUsageSnapshot{}
+	snapshot := &OpenAICodexUsageSnapshot{ActiveLimit: headers.Get("X-Codex-Active-Limit")}
 	hasData := false
 
 	// Helper to parse float64 from header
@@ -1046,6 +1046,26 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		hasData = true
 	}
 
+	for _, slot := range []struct {
+		name  string
+		at    **int64
+		after **int
+	}{
+		{"primary", &snapshot.PrimaryResetAt, &snapshot.PrimaryResetAfterSeconds},
+		{"secondary", &snapshot.SecondaryResetAt, &snapshot.SecondaryResetAfterSeconds},
+	} {
+		if at, err := strconv.ParseInt(headers.Get("x-codex-"+slot.name+"-reset-at"), 10, 64); err == nil && at > 0 {
+			*slot.at = &at
+			if *slot.after == nil {
+				remaining := int(at - time.Now().Unix())
+				if remaining < 0 {
+					remaining = 0
+				}
+				*slot.after = &remaining
+			}
+			hasData = true
+		}
+	}
 	if !hasData {
 		return nil
 	}
@@ -1157,11 +1177,15 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	}
 
 	now := time.Now()
-	updates := buildCodexUsageExtraUpdates(snapshot, now)
-	if len(updates) == 0 {
-		return
+	observed := codexQuotaObservationUpdates(accountID, quotaObservationsFromSnapshot(snapshot, now))
+	updates := observed
+	if s.getCodexSnapshotThrottle().Allow(accountID, now) {
+		updates = buildCodexUsageExtraUpdates(snapshot, now)
+		for key, value := range observed {
+			updates[key] = value
+		}
 	}
-	if !s.getCodexSnapshotThrottle().Allow(accountID, now) {
+	if len(updates) == 0 {
 		return
 	}
 

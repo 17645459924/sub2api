@@ -99,6 +99,17 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
+		// Keeper is an independent SPA sharing the authenticated admin API.
+		if strings.HasPrefix(cleanPath, "keeper/") && !s.fileExists(cleanPath) && !strings.Contains(cleanPath, ".") {
+			content, err := fs.ReadFile(s.distFS, "keeper/index.html")
+			if err == nil {
+				c.Header("Cache-Control", "no-cache")
+				c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+				c.Abort()
+				return
+			}
+		}
+
 		// For index.html or SPA routes, serve with injected settings
 		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
 			s.serveIndexHTML(c)

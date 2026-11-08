@@ -1,6 +1,6 @@
 <template>
   <section
-    class="overflow-hidden rounded-2xl border bg-white shadow-card dark:bg-dark-800/50"
+    class="min-w-0 max-w-full overflow-hidden rounded-2xl border bg-white shadow-card dark:bg-dark-800/50"
     :class="[platformBorderStrongClass(group.platform)]"
   >
     <!-- 分组头部:名称/平台/倍率徽章/专属/订阅徽章 + 描述 -->
@@ -51,6 +51,11 @@
       </p>
     </header>
 
+    <p class="flex items-center gap-2 border-b border-gray-100 px-5 py-2 text-xs text-gray-600 dark:border-dark-700/60 dark:text-dark-300 lg:hidden">
+      <span aria-hidden="true">↔</span>
+      {{ t('modelPlaza.table.scrollHint') }}
+    </p>
+
     <!-- 模型价格表:整行(含 hover 底色/分区底色)顶到卡片边缘,左右留白由表格首列/末列的 padding 提供 -->
     <div>
       <PlazaModelPricingTable
@@ -66,7 +71,7 @@
         :peak-window="peakWindow"
         :peak-rate-multiplier="group.peak_rate_multiplier"
       />
-      <p v-else class="px-5 py-4 text-center text-sm text-gray-400 dark:text-dark-500">
+      <p v-else class="px-5 py-4 text-center text-sm text-gray-500 dark:text-dark-400">
         {{ t('modelPlaza.detail.noModels') }}
       </p>
     </div>

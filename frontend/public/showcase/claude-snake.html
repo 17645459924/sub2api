@@ -1,156 +1,442 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>霓虹贪吃蛇</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
-  background:radial-gradient(circle at 50% 25%,#1a0838 0%,#07030f 70%);
-  color:#bffcff;font-family:"Segoe UI",system-ui,sans-serif;
-  user-select:none;-webkit-user-select:none;touch-action:none;overflow:hidden;
-}
-h1{
-  font-size:28px;letter-spacing:6px;color:#fff;
-  text-shadow:0 0 6px #0ff,0 0 16px #0ff,0 0 32px #08f;
-}
-.board{display:flex;gap:28px;font-size:15px;letter-spacing:2px}
-.board div{
-  padding:6px 16px;border:1px solid #0ff6;border-radius:8px;
-  background:#0ff1;box-shadow:0 0 12px #0ff3 inset;
-}
-.board b{color:#ff4fd8;text-shadow:0 0 8px #f0c;font-size:18px;margin-left:6px}
-canvas{
-  width:min(92vw,62vh,480px);aspect-ratio:1;
-  border:2px solid #0ff;border-radius:10px;background:#070312;
-  box-shadow:0 0 14px #0ff,0 0 40px #0ff5,inset 0 0 30px #0ff3;
-}
-p{font-size:13px;color:#7aa;letter-spacing:1px}
-</style>
-</head>
-<body>
-<h1>NEON SNAKE</h1>
-<div class="board">
-  <div>分数<b id="score">0</b></div>
-  <div>最高分<b id="best">0</b></div>
-</div>
-<canvas id="c" width="480" height="480"></canvas>
-<p>方向键 / WASD 或触屏滑动控制</p>
-
-<script>
-const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const N = 20, S = cv.width / N;
-const scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
-let snake, dir, queue, food, score, speed, state, last = 0;
-let best = 0;
-try { best = +localStorage.getItem('neonSnakeBest') || 0; } catch (e) {}
-bestEl.textContent = best;
-
-function reset() {
-  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
-  dir = {x:1,y:0}; queue = []; score = 0; speed = 130; state = 'ready';
-  scoreEl.textContent = 0;
-  placeFood();
-}
-function restart() { reset(); state = 'play'; last = performance.now(); }
-function placeFood() {
-  do { food = {x:Math.random()*N|0, y:Math.random()*N|0}; }
-  while (snake.some(s => s.x === food.x && s.y === food.y));
-}
-function turn(dx, dy) {
-  if (state === 'over') return;
-  const ref = queue.length ? queue[queue.length - 1] : dir;
-  if ((dx === -ref.x && dy === -ref.y) || (dx === ref.x && dy === ref.y)) return;
-  if (queue.length < 3) queue.push({x:dx, y:dy});
-  if (state === 'ready') { state = 'play'; last = performance.now(); }
-}
-function gameOver() {
-  state = 'over';
-  if (score > best) {
-    best = score; bestEl.textContent = best;
-    try { localStorage.setItem('neonSnakeBest', best); } catch (e) {}
-  }
-}
-function step() {
-  if (queue.length) dir = queue.shift();
-  const h = {x:snake[0].x + dir.x, y:snake[0].y + dir.y};
-  const eat = h.x === food.x && h.y === food.y;
-  const body = eat ? snake : snake.slice(0, -1);
-  if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || body.some(s => s.x === h.x && s.y === h.y)) return gameOver();
-  snake.unshift(h);
-  if (eat) {
-    score += 10; scoreEl.textContent = score;
-    speed = Math.max(60, speed - 2);
-    placeFood();
-  } else snake.pop();
-}
-
-function glowRect(x, y, color, blur, inset) {
-  ctx.shadowColor = color; ctx.shadowBlur = blur; ctx.fillStyle = color;
-  ctx.fillRect(x * S + inset, y * S + inset, S - inset * 2, S - inset * 2);
-}
-function overlay(title, sub) {
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(5,2,12,.72)'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.textAlign = 'center';
-  ctx.shadowColor = '#f0c'; ctx.shadowBlur = 20; ctx.fillStyle = '#fff';
-  ctx.font = 'bold 44px "Segoe UI",sans-serif';
-  ctx.fillText(title, cv.width / 2, cv.height / 2 - 6);
-  ctx.shadowColor = '#0ff'; ctx.shadowBlur = 10; ctx.fillStyle = '#bffcff';
-  ctx.font = '18px "Segoe UI",sans-serif';
-  ctx.fillText(sub, cv.width / 2, cv.height / 2 + 32);
-}
-function draw(t) {
-  ctx.shadowBlur = 0; ctx.fillStyle = '#070312'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.strokeStyle = 'rgba(0,255,255,.06)'; ctx.lineWidth = 1;
-  for (let i = 1; i < N; i++) {
-    ctx.beginPath(); ctx.moveTo(i * S, 0); ctx.lineTo(i * S, cv.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i * S); ctx.lineTo(cv.width, i * S); ctx.stroke();
-  }
-  glowRect(food.x, food.y, '#ff2fd0', 14 + 8 * Math.sin(t / 160), 4 + Math.sin(t / 160));
-  for (let i = snake.length - 1; i >= 0; i--) {
-    const s = snake[i];
-    glowRect(s.x, s.y, i === 0 ? '#eaffff' : `hsl(${185 + i * 4},100%,${60 - Math.min(i, 20)}%)`, i === 0 ? 20 : 12, 2);
-  }
-  ctx.shadowBlur = 0;
-  if (state === 'ready') overlay('准备开始', '按方向键或滑动屏幕');
-  else if (state === 'over') overlay('GAME OVER', `得分 ${score} · 点击重新开始`);
-}
-function loop(t) {
-  if (state === 'play' && t - last >= speed) { last = t; step(); }
-  draw(t);
-  requestAnimationFrame(loop);
-}
-
-const keys = {ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],w:[0,-1],s:[0,1],a:[-1,0],d:[1,0]};
-addEventListener('keydown', e => {
-  const k = keys[e.key] || keys[e.key.toLowerCase()];
-  if (!k) return;
-  e.preventDefault(); turn(k[0], k[1]);
-});
-
-let tx = 0, ty = 0, moved = false;
-cv.addEventListener('touchstart', e => {
-  e.preventDefault(); tx = e.touches[0].clientX; ty = e.touches[0].clientY; moved = false;
-}, {passive:false});
-cv.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const dx = e.touches[0].clientX - tx, dy = e.touches[0].clientY - ty;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  Math.abs(dx) > Math.abs(dy) ? turn(dx > 0 ? 1 : -1, 0) : turn(0, dy > 0 ? 1 : -1);
-  tx = e.touches[0].clientX; ty = e.touches[0].clientY; moved = true;
-}, {passive:false});
-cv.addEventListener('touchend', e => {
-  e.preventDefault();
-  if (!moved && state === 'over') restart();
-}, {passive:false});
-cv.addEventListener('click', () => { if (state === 'over') restart(); });
-
-reset();
-requestAnimationFrame(loop);
-</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>霓虹贪吃蛇</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: radial-gradient(ellipse at 50% 25%, #211137, #0c0713 75%);
+        color: #d7c8f0;
+        font: 11px system-ui;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 18px;
+        overflow: hidden;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      h1 {
+        font: 11px monospace;
+        letter-spacing: 3px;
+        margin: 0;
+        color: #ddd1f6;
+      }
+      .scores {
+        display: flex;
+        gap: 12px;
+        font-size: 9px;
+        color: #9786ad;
+      }
+      .scores b {
+        color: #deb9ef;
+        margin-left: 5px;
+      }
+      .stage {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        place-items: center;
+      }
+      canvas {
+        display: block;
+        border: 1px solid #8760b9;
+        border-radius: 6px;
+        box-shadow: 0 0 28px #ac7bdb15;
+        outline: none;
+        touch-action: none;
+      }
+      canvas:focus-visible {
+        outline: 2px solid #d5b6ff;
+        outline-offset: 3px;
+      }
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        flex-shrink: 0;
+      }
+      button {
+        background: #2b193f;
+        border: 1px solid #8e68bc66;
+        border-radius: 4px;
+        padding: 7px 13px;
+        color: #ddc7f7;
+        font: 10px system-ui;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #42245e;
+      }
+      button:focus-visible {
+        outline: 2px solid #d5b6ff;
+        outline-offset: 2px;
+      }
+      .dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 28px);
+        gap: 3px;
+      }
+      .dpad button {
+        padding: 3px;
+        font-size: 12px;
+        min-height: 23px;
+        touch-action: manipulation;
+      }
+      .dpad button:first-child {
+        grid-column: 2;
+      }
+      .dpad button:nth-child(2) {
+        grid-column: 1;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .hint {
+        font-size: 8px;
+        color: #9f8aaf;
+        margin: 0;
+        max-width: 160px;
+        line-height: 1.8;
+      }
+      #status {
+        font-size: 8px;
+        color: #b19bc3;
+        margin-top: 5px;
+        display: block;
+      }
+      @media (max-width: 350px) {
+        body {
+          padding: 10px;
+        }
+        .hint {
+          max-width: 115px;
+          font-size: 7px;
+        }
+        .scores {
+          gap: 6px;
+          font-size: 8px;
+        }
+        .actions {
+          gap: 4px;
+        }
+        button {
+          padding: 6px 9px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NEON SNAKE</h1>
+      <div class="scores">
+        <span>分数 <b id="score">0</b></span
+        ><span>最高 <b id="best">0</b></span>
+      </div>
+    </header>
+    <div class="stage">
+      <canvas
+        id="c"
+        width="480"
+        height="480"
+        tabindex="0"
+        aria-label="贪吃蛇游戏，方向键或 WASD 控制"
+      ></canvas>
+    </div>
+    <div class="controls">
+      <div>
+        <div class="actions">
+          <button id="start" type="button">开始游戏</button
+          ><button id="pause" type="button">暂停</button>
+        </div>
+        <span id="status" role="status">点击开始，或按方向键</span>
+      </div>
+      <div class="dpad" aria-label="方向控制">
+        <button data-dir="up" aria-label="向上">↑</button
+        ><button data-dir="left" aria-label="向左">←</button
+        ><button data-dir="down" aria-label="向下">↓</button
+        ><button data-dir="right" aria-label="向右">→</button>
+      </div>
+      <p class="hint">方向键 / WASD / 滑动控制<br />空格暂停，Enter 重新开始</p>
+    </div>
+    <script>
+      'use strict'
+      const cv = document.getElementById('c'),
+        ctx = cv.getContext('2d'),
+        stage = document.querySelector('.stage'),
+        scoreEl = document.getElementById('score'),
+        bestEl = document.getElementById('best'),
+        statusEl = document.getElementById('status'),
+        startBtn = document.getElementById('start'),
+        pauseBtn = document.getElementById('pause')
+      const N = 20,
+        S = 24
+      let snake,
+        dir,
+        queue,
+        food,
+        score,
+        speed,
+        state,
+        last = 0,
+        best = 0
+      try {
+        best = Number(localStorage.getItem('neonSnakeBest')) || 0
+      } catch {}
+      bestEl.textContent = best
+      function status(text) {
+        statusEl.textContent = text
+        cv.dataset.state = state
+        pauseBtn.textContent = state === 'paused' ? '继续' : '暂停'
+      }
+      function reset() {
+        snake = [
+          { x: 10, y: 10 },
+          { x: 9, y: 10 },
+          { x: 8, y: 10 },
+        ]
+        dir = { x: 1, y: 0 }
+        queue = []
+        score = 0
+        speed = 150
+        state = 'ready'
+        scoreEl.textContent = 0
+        placeFood()
+        status('点击开始，或按方向键')
+      }
+      function start() {
+        if (state === 'over' || state === 'ready') reset()
+        state = 'play'
+        last = performance.now()
+        status('游戏进行中')
+        startBtn.textContent = '重新开始'
+        cv.focus({ preventScroll: true })
+      }
+      function restart() {
+        reset()
+        start()
+      }
+      function togglePause() {
+        if (state === 'play') {
+          state = 'paused'
+          status('已暂停，点击继续或按空格')
+        } else if (state === 'paused') {
+          start()
+        }
+        cv.focus({ preventScroll: true })
+      }
+      function placeFood() {
+        if (snake.length === N * N) {
+          state = 'over'
+          status('恭喜通关！')
+          return
+        }
+        do {
+          food = { x: (Math.random() * N) | 0, y: (Math.random() * N) | 0 }
+        } while (snake.some((p) => p.x === food.x && p.y === food.y))
+      }
+      function turn(dx, dy) {
+        if (state === 'over') return
+        if (state === 'ready' || state === 'paused') start()
+        const ref = queue.length ? queue[queue.length - 1] : dir
+        if ((dx === -ref.x && dy === -ref.y) || (dx === ref.x && dy === ref.y))
+          return
+        if (queue.length < 3) queue.push({ x: dx, y: dy })
+      }
+      function gameOver() {
+        state = 'over'
+        if (score > best) {
+          best = score
+          bestEl.textContent = best
+          try {
+            localStorage.setItem('neonSnakeBest', String(best))
+          } catch {}
+        }
+        status('游戏结束，点击重新开始')
+        startBtn.textContent = '重新开始'
+      }
+      function step() {
+        if (queue.length) dir = queue.shift()
+        const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y },
+          eat = head.x === food.x && head.y === food.y,
+          body = eat ? snake : snake.slice(0, -1)
+        if (
+          head.x < 0 ||
+          head.x >= N ||
+          head.y < 0 ||
+          head.y >= N ||
+          body.some((p) => p.x === head.x && p.y === head.y)
+        )
+          return gameOver()
+        snake.unshift(head)
+        if (eat) {
+          score += 10
+          scoreEl.textContent = score
+          speed = Math.max(70, speed - 3)
+          placeFood()
+        } else snake.pop()
+        cv.dataset.head = `${head.x},${head.y}`
+      }
+      function overlay(title, sub) {
+        ctx.shadowBlur = 0
+        ctx.fillStyle = '#0c0713c9'
+        ctx.fillRect(0, 0, 480, 480)
+        ctx.textAlign = 'center'
+        ctx.fillStyle = '#f0e5ff'
+        ctx.font = '26px system-ui'
+        ctx.fillText(title, 240, 230)
+        ctx.fillStyle = '#a992c2'
+        ctx.font = '14px system-ui'
+        ctx.fillText(sub, 240, 263)
+      }
+      function draw(now) {
+        ctx.shadowBlur = 0
+        ctx.fillStyle = '#0d0817'
+        ctx.fillRect(0, 0, 480, 480)
+        ctx.strokeStyle = '#a981d30c'
+        ctx.lineWidth = 1
+        for (let i = 1; i < N; i++) {
+          ctx.beginPath()
+          ctx.moveTo(i * S, 0)
+          ctx.lineTo(i * S, 480)
+          ctx.moveTo(0, i * S)
+          ctx.lineTo(480, i * S)
+          ctx.stroke()
+        }
+        function block(x, y, color, blur) {
+          ctx.fillStyle = color
+          ctx.shadowColor = color
+          ctx.shadowBlur = blur
+          ctx.fillRect(x * S + 3, y * S + 3, S - 6, S - 6)
+        }
+        block(food.x, food.y, '#ed90cc', 16)
+        snake.forEach((p, i) =>
+          block(p.x, p.y, i ? '#ad8be0' : '#eee2ff', i ? 10 : 18)
+        )
+        if (state === 'ready')
+          overlay('准备好了吗？', '点击画布、开始按钮，或按方向键')
+        if (state === 'over')
+          overlay('GAME OVER', `得分 ${score} · 点击画布重新开始`)
+        if (state === 'paused') overlay('已暂停', '按空格或点击继续')
+        cv.dataset.state = state
+        cv.dataset.head = `${snake[0].x},${snake[0].y}`
+      }
+      function loop(now) {
+        if (state === 'play' && now - last >= speed) {
+          last = now
+          step()
+        }
+        draw(now)
+        requestAnimationFrame(loop)
+      }
+      const keys = {
+          ArrowUp: [0, -1],
+          ArrowDown: [0, 1],
+          ArrowLeft: [-1, 0],
+          ArrowRight: [1, 0],
+          w: [0, -1],
+          s: [0, 1],
+          a: [-1, 0],
+          d: [1, 0],
+        },
+        directions = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') {
+          e.preventDefault()
+          togglePause()
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          restart()
+          return
+        }
+        const k = keys[e.key] || keys[e.key.toLowerCase()]
+        if (k) {
+          e.preventDefault()
+          turn(...k)
+        }
+      })
+      function bindAction(button, action) {
+        button.addEventListener('pointerdown', (event) => {
+          event.preventDefault()
+          action()
+        })
+        // Keyboard and assistive activation produce a click with no pointer detail.
+        button.addEventListener('click', (event) => {
+          if (event.detail === 0) action()
+        })
+      }
+      bindAction(startBtn, restart)
+      bindAction(pauseBtn, togglePause)
+      document.querySelectorAll('[data-dir]').forEach((button) =>
+        bindAction(button, () => {
+          if (state === 'over') reset()
+          turn(...directions[button.dataset.dir])
+          cv.focus({ preventScroll: true })
+        })
+      )
+      let pointerStart
+      cv.addEventListener('pointerdown', (e) => {
+        cv.focus({ preventScroll: true })
+        cv.setPointerCapture(e.pointerId)
+        pointerStart = { x: e.clientX, y: e.clientY }
+        if (state === 'ready' || state === 'over') restart()
+        else if (state === 'paused') start()
+      })
+      cv.addEventListener('pointermove', (e) => {
+        if (!pointerStart) return
+        const dx = e.clientX - pointerStart.x,
+          dy = e.clientY - pointerStart.y
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return
+        turn(
+          ...(Math.abs(dx) > Math.abs(dy)
+            ? [dx > 0 ? 1 : -1, 0]
+            : [0, dy > 0 ? 1 : -1])
+        )
+        pointerStart = { x: e.clientX, y: e.clientY }
+      })
+      cv.addEventListener('pointerup', () => (pointerStart = undefined))
+      cv.addEventListener('pointercancel', () => (pointerStart = undefined))
+      addEventListener('blur', () => {
+        if (state === 'play') {
+          state = 'paused'
+          status('已暂停，点击继续')
+        }
+      })
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && state === 'play') {
+          state = 'paused'
+          status('已暂停，点击继续')
+        }
+      })
+      new ResizeObserver(() => {
+        const size = Math.max(
+          1,
+          Math.floor(Math.min(stage.clientWidth, stage.clientHeight))
+        )
+        cv.style.width = size + 'px'
+        cv.style.height = size + 'px'
+      }).observe(stage)
+      reset()
+      requestAnimationFrame(loop)
+    </script>
+  </body>
 </html>

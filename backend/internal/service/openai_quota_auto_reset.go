@@ -573,7 +573,7 @@ func buildOpenAIAutoResetUsageUpdates(usage *OpenAIQuotaUsage, now time.Time) ma
 	rateLimit := usage.RateLimit
 	snapshot := &OpenAICodexUsageSnapshot{UpdatedAt: now.UTC().Format(time.RFC3339)}
 	applyWindow := func(window *OpenAIRateLimitWindow, primary bool) {
-		if window == nil {
+		if window == nil || window.UtilizationUnknown || (window.LimitWindowSeconds != 18000 && window.LimitWindowSeconds != 604800) {
 			return
 		}
 		used := window.UsedPercent

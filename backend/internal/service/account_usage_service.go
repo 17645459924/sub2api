@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -147,12 +149,16 @@ type WindowStats struct {
 
 // UsageProgress 使用量进度
 type UsageProgress struct {
-	Utilization      float64      `json:"utilization"`            // 使用率百分比 (0-100+，100表示100%)
-	ResetsAt         *time.Time   `json:"resets_at"`              // 重置时间
-	RemainingSeconds int          `json:"remaining_seconds"`      // 距重置剩余秒数
-	WindowStats      *WindowStats `json:"window_stats,omitempty"` // 窗口期统计（从窗口开始到当前的使用量）
-	UsedRequests     int64        `json:"used_requests,omitempty"`
-	LimitRequests    int64        `json:"limit_requests,omitempty"`
+	NotApplicable      bool         `json:"not_applicable,omitempty"` // Official API explicitly returned a null window, not unlimited quota.
+	MeasurementSource  string       `json:"measurement_source,omitempty"`
+	SampledAt          int64        `json:"sampled_at,omitempty"`
+	UtilizationUnknown bool         `json:"utilization_unknown,omitempty"` // No valid upstream measurement for this window.
+	Utilization        float64      `json:"utilization"`                   // 使用率百分比 (0-100+，100表示100%)
+	ResetsAt           *time.Time   `json:"resets_at"`                     // 重置时间
+	RemainingSeconds   int          `json:"remaining_seconds"`             // 距重置剩余秒数
+	WindowStats        *WindowStats `json:"window_stats,omitempty"`        // 窗口期统计（从窗口开始到当前的使用量）
+	UsedRequests       int64        `json:"used_requests,omitempty"`
+	LimitRequests      int64        `json:"limit_requests,omitempty"`
 }
 
 // AntigravityModelQuota Antigravity 单个模型的配额信息
@@ -255,7 +261,10 @@ type ClaudeUsageWindow struct {
 
 // ClaudeUsageResponse Anthropic API返回的usage结构
 type ClaudeUsageResponse struct {
-	FiveHour struct {
+	NullWindows map[string]bool `json:"-"`
+	// Tracks JSON field presence so missing/null utilization never becomes a measured zero.
+	MissingUtilization map[string]bool `json:"-"`
+	FiveHour           struct {
 		Utilization float64 `json:"utilization"`
 		ResetsAt    string  `json:"resets_at"`
 	} `json:"five_hour"`
@@ -271,6 +280,34 @@ type ClaudeUsageResponse struct {
 	// 见 anthropic-ratelimit-unified-representative-claim 头）。上游 usage API
 	// 若不下发该字段，GetUsage 会用被动采样数据回填。
 	SevenDayOverageIncluded ClaudeUsageWindow `json:"seven_day_overage_included"`
+}
+
+func (r *ClaudeUsageResponse) UnmarshalJSON(data []byte) error {
+	type plain ClaudeUsageResponse
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+	decoded.MissingUtilization = make(map[string]bool)
+	decoded.NullWindows = make(map[string]bool)
+	for _, name := range []string{"five_hour", "seven_day", "seven_day_sonnet", "seven_day_overage_included"} {
+		var window struct {
+			Utilization *float64 `json:"utilization"`
+		}
+		if raw := envelope[name]; len(raw) > 0 {
+			decoded.NullWindows[name] = strings.TrimSpace(string(raw)) == "null"
+			if err := json.Unmarshal(raw, &window); err != nil {
+				return err
+			}
+		}
+		decoded.MissingUtilization[name] = window.Utilization == nil
+	}
+	*r = ClaudeUsageResponse(decoded)
+	return nil
 }
 
 // ClaudeUsageFetchOptions 包含获取 Claude 用量数据所需的所有选项
@@ -354,6 +391,9 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 		return nil, fmt.Errorf("account is required")
 	}
 	accountID := account.ID
+	if forceProbe && s.cache != nil {
+		s.cache.windowStatsCache.Delete(accountID)
+	}
 
 	// Dedicated UI load-test accounts must remain fully interactive without ever
 	// contacting Anthropic with synthetic credentials. Reuse the same persisted
@@ -393,19 +433,21 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 		return usage, err
 	}
 
-	// 只有oauth类型账号可以通过API获取usage（有profile scope）
+	// Query both OAuth and setup tokens; only the upstream decides permission.
 	if account.CanGetUsage() {
 		var apiResp *ClaudeUsageResponse
+		var initialCache *apiUsageCache
 
 		// 1. 检查缓存（成功响应 3 分钟 / 错误响应 1 分钟）
 		if cached, ok := s.cache.apiCache.Load(accountID); ok {
 			if cache, ok := cached.(*apiUsageCache); ok {
+				initialCache = cache
 				age := time.Since(cache.timestamp)
 				if cache.err != nil && age < apiErrorCacheTTL {
 					// 负缓存命中：返回缓存的错误，避免重试风暴
 					return nil, cache.err
 				}
-				if cache.response != nil && age < apiCacheTTL {
+				if cache.response != nil && age < apiCacheTTL && !forceProbe {
 					apiResp = cache.response
 				}
 			}
@@ -431,7 +473,7 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 						if cache.err != nil && age < apiErrorCacheTTL {
 							return nil, cache.err
 						}
-						if cache.response != nil && age < apiCacheTTL {
+						if cache.response != nil && age < apiCacheTTL && (!forceProbe || cache != initialCache) {
 							return cache.response, nil
 						}
 					}
@@ -458,31 +500,42 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 			apiResp, _ = result.(*ClaudeUsageResponse)
 		}
 
-		// 3. 构建 UsageInfo（每次都重新计算 RemainingSeconds）
+		// 3. Recompute countdowns without relabeling a cached sample as newly fetched.
 		now := time.Now()
-		usage := s.buildUsageInfo(apiResp, &now)
+		sampledAt := now
+		if cached, ok := s.cache.apiCache.Load(accountID); ok {
+			if cache, ok := cached.(*apiUsageCache); ok && cache.response == apiResp {
+				sampledAt = cache.timestamp
+			}
+		}
+		usage := s.buildUsageInfo(apiResp, &sampledAt)
+		usage.Source = "active"
+		// Save only this API response, then supplement its missing windows with
+		// recent measurements from real requests. Explicit nulls remain absent.
+		s.syncActiveToPassive(ctx, account.ID, usage, account)
+		applyClaudeObservations(usage, account, apiResp, now)
+		measured := false
+		for _, window := range []*UsageProgress{usage.FiveHour, usage.SevenDay, usage.SevenDaySonnet, usage.SevenDayFable} {
+			if window != nil && (!window.UtilizationUnknown || window.NotApplicable) {
+				measured = true
+			}
+		}
+		if !measured {
+			usage.Error = "upstream usage response contains no quota measurements"
+		}
 
 		// 4. 添加窗口统计（有独立缓存，1 分钟）
 		s.addWindowStats(ctx, account, usage)
 
-		// 5. 将主动查询结果同步到被动缓存，下次 passive 加载即为最新值
-		s.syncActiveToPassive(ctx, account.ID, usage)
-
 		// 6. 上游 usage API 目前不一定下发 Fable 7d 窗口；缺失时回填被动采样
 		// （7d_oi 响应头）的数据，避免主动查询后 7d F 进度条丢失。
-		if usage.SevenDayFable == nil {
+		if usage.SevenDayFable == nil && !apiResp.NullWindows["seven_day_overage_included"] && account.Extra["claude_quota_seven_day_overage_included"] == nil {
 			usage.SevenDayFable = buildPassiveUsageWindow(account.Extra, "passive_usage_7d_oi_utilization", "passive_usage_7d_oi_reset")
 		}
 
-		s.tryClearRecoverableAccountError(ctx, account)
-		return usage, nil
-	}
-
-	// Setup Token账号：根据session_window推算（没有profile scope，无法调用usage API）
-	if account.Type == AccountTypeSetupToken {
-		usage := s.estimateSetupTokenUsage(account)
-		// 添加窗口统计
-		s.addWindowStats(ctx, account, usage)
+		if usage.Error == "" {
+			s.tryClearRecoverableAccountError(ctx, account)
+		}
 		return usage, nil
 	}
 
@@ -491,8 +544,7 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 }
 
 // GetUsage 获取账号使用量
-// OAuth账号: 调用Anthropic API获取真实数据（需要profile scope），API响应缓存10分钟，窗口统计缓存1分钟
-// Setup Token账号: 根据session_window推算5h窗口，7d数据不可用（没有profile scope）
+// OAuth / Setup Token: query the official usage endpoint; forced reads bypass the success cache.
 // API Key账号: 不支持usage查询
 func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, force ...bool) (*UsageInfo, error) {
 	forceProbe := len(force) > 0 && force[0]
@@ -513,7 +565,7 @@ func (s *AccountUsageService) GetUsageForAccount(ctx context.Context, account *A
 }
 
 // GetUsageBatch 批量获取账号使用量。
-// Anthropic OAuth/SetupToken 统一走 passive 链路，其他账号复用现有主动查询逻辑。
+// 默认 Anthropic OAuth/SetupToken 走 passive 链路；强制刷新均查询官方 usage 接口。
 // 单个账号失败不会中断整批请求，错误会按账号返回。
 func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []int64, force bool) (map[int64]*UsageInfo, map[int64]string, error) {
 	if adminaccess.RestrictedFromContext(ctx) != nil {
@@ -580,7 +632,7 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 		g.Go(func() error {
 			var usage *UsageInfo
 			var usageErr error
-			if supportsAnthropicPassiveUsage(account) {
+			if supportsAnthropicPassiveUsage(account) && !force {
 				usage, usageErr = s.getPassiveUsageForAccount(gctx, account)
 			} else {
 				usage, usageErr = s.getUsageForAccount(gctx, account, force)
@@ -641,6 +693,7 @@ func (s *AccountUsageService) getPassiveUsageForAccount(ctx context.Context, acc
 
 	// 构建 7d Fable 窗口（从被动采样的 7d_oi 响应头数据）
 	info.SevenDayFable = buildPassiveUsageWindow(account.Extra, "passive_usage_7d_oi_utilization", "passive_usage_7d_oi_reset")
+	applyClaudeObservations(info, account, nil, time.Now())
 
 	// 添加窗口统计
 	s.addWindowStats(ctx, account, info)
@@ -671,9 +724,9 @@ func applySyntheticWindowStats(info *UsageInfo, extra map[string]any) {
 // buildPassiveUsageWindow 从 Extra 中的被动采样数据（utilization 为 0-1 小数、reset 为 Unix 秒）
 // 构建用量窗口，无数据时返回 nil。
 func buildPassiveUsageWindow(extra map[string]any, utilKey, resetKey string) *UsageProgress {
-	util := parseExtraFloat64(extra[utilKey])
+	util, measured := sampledUtilization(extra[utilKey])
 	resetRaw := parseExtraFloat64(extra[resetKey])
-	if util <= 0 && resetRaw <= 0 {
+	if !measured && resetRaw <= 0 {
 		return nil
 	}
 	var resetAt *time.Time
@@ -687,27 +740,47 @@ func buildPassiveUsageWindow(extra map[string]any, utilKey, resetKey string) *Us
 		}
 	}
 	return &UsageProgress{
-		Utilization:      util * 100,
-		ResetsAt:         resetAt,
-		RemainingSeconds: remaining,
+		UtilizationUnknown: !measured || (resetAt != nil && !time.Now().Before(*resetAt)),
+		Utilization:        util * 100,
+		ResetsAt:           resetAt,
+		RemainingSeconds:   remaining,
 	}
+}
+
+func sampledUtilization(raw any) (float64, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(fmt.Sprint(raw), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0, false
+	}
+	return value, true
 }
 
 // syncActiveToPassive 将主动查询的最新数据回写到 Extra 被动缓存，
 // 这样下次被动加载时能看到最新值。
-func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID int64, usage *UsageInfo) {
+func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID int64, usage *UsageInfo, accounts ...*Account) {
 	extraUpdates := make(map[string]any, 4)
+	if len(accounts) > 0 {
+		for key, value := range claudeActiveObservations(accounts[0], usage) {
+			extraUpdates[key] = value
+		}
+	}
+	if usage.FiveHour != nil && usage.FiveHour.NotApplicable {
+		extraUpdates["session_window_utilization"] = nil
+	}
 
-	if usage.FiveHour != nil {
+	if usage.FiveHour != nil && !usage.FiveHour.UtilizationUnknown {
 		extraUpdates["session_window_utilization"] = usage.FiveHour.Utilization / 100
 	}
-	if usage.SevenDay != nil {
+	if usage.SevenDay != nil && !usage.SevenDay.UtilizationUnknown {
 		extraUpdates["passive_usage_7d_utilization"] = usage.SevenDay.Utilization / 100
 		if usage.SevenDay.ResetsAt != nil {
 			extraUpdates["passive_usage_7d_reset"] = usage.SevenDay.ResetsAt.Unix()
 		}
 	}
-	if usage.SevenDayFable != nil {
+	if usage.SevenDayFable != nil && !usage.SevenDayFable.UtilizationUnknown {
 		extraUpdates["passive_usage_7d_oi_utilization"] = usage.SevenDayFable.Utilization / 100
 		if usage.SevenDayFable.ResetsAt != nil {
 			extraUpdates["passive_usage_7d_oi_reset"] = usage.SevenDayFable.ResetsAt.Unix()
@@ -715,7 +788,11 @@ func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID
 	}
 
 	if len(extraUpdates) > 0 {
-		extraUpdates["passive_usage_sampled_at"] = time.Now().UTC().Format(time.RFC3339)
+		sampledAt := time.Now()
+		if usage.UpdatedAt != nil {
+			sampledAt = *usage.UpdatedAt
+		}
+		extraUpdates["passive_usage_sampled_at"] = sampledAt.UTC().Format(time.RFC3339)
 		if err := s.accountRepo.UpdateExtra(ctx, accountID, extraUpdates); err != nil {
 			slog.Warn("sync_active_to_passive_failed", "account_id", accountID, "error", err)
 		}
@@ -723,7 +800,7 @@ func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID
 
 	// 5h ResetsAt 必须回写到 SessionWindowEnd column，estimateSetupTokenUsage
 	// 读这个字段作为窗口结束时间；只塞 Extra 会让 UI 一直拿到上个窗口的过期时间。
-	if usage.FiveHour != nil && usage.FiveHour.ResetsAt != nil {
+	if usage.FiveHour != nil && !usage.FiveHour.UtilizationUnknown && usage.FiveHour.ResetsAt != nil {
 		if err := s.accountRepo.UpdateSessionWindowEnd(ctx, accountID, *usage.FiveHour.ResetsAt); err != nil {
 			slog.Warn("sync_active_to_passive_session_window_end_failed", "account_id", accountID, "error", err)
 		}
@@ -741,7 +818,20 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	applyExtraToUsage(usage, account.Extra, now)
 
 	if (force || shouldRefreshOpenAICodexSnapshot(account, usage, now)) && s.shouldProbeOpenAICodexSnapshot(account.ID, now, force) {
-		if adminaccess.RestrictedFromContext(ctx) != nil {
+		if !account.IsShadow() && adminaccess.RestrictedFromContext(ctx) == nil && s.openAIQuotaService != nil {
+			// Automatic and explicit reads use the quota endpoint. Actual model
+			// traffic supplies passive observations; querying needs no model call.
+			quotaUsage, err := s.openAIQuotaService.QueryUsage(WithScopedAdminAccountOperation(ctx, "accounts.usage.read"), account.ID)
+			if err != nil {
+				usage.Error = err.Error()
+			} else if updates := buildOpenAIAutoResetUsageUpdates(quotaUsage, now); len(updates) > 0 {
+				mergeAccountExtra(account, updates)
+				s.persistOpenAICodexProbeSnapshotContext(ctx, account.ID, updates)
+				applyExtraToUsage(usage, account.Extra, now)
+			} else {
+				usage.Error = "upstream quota response contains no usage windows"
+			}
+		} else if adminaccess.RestrictedFromContext(ctx) != nil {
 			// 受限额度读取只调用额度 API，不生成 /responses 合成请求或消费重置次数。
 			if s.openAIQuotaService != nil {
 				if quotaUsage, err := s.openAIQuotaService.QueryUsage(WithScopedAdminAccountOperation(ctx, "accounts.usage.read"), account.ID); err == nil {
@@ -783,24 +873,31 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					usage.UpdatedAt = &now
 				}
 				applyExtraToUsage(usage, account.Extra, now)
+			} else if force {
+				if err != nil {
+					usage.Error = err.Error()
+				} else {
+					usage.Error = "upstream response contains no usage windows"
+				}
 			}
 		}
 	}
 
+	applyObservedOpenAIUsage(usage, account, time.Now())
 	if s.usageLogRepo == nil {
 		return usage, nil
 	}
 
 	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.FiveHour, 5*time.Hour, now)); err == nil {
 		if usage.FiveHour == nil {
-			usage.FiveHour = &UsageProgress{Utilization: 0}
+			usage.FiveHour = &UsageProgress{UtilizationUnknown: true}
 		}
 		usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats)
 	}
 
 	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.SevenDay, 7*24*time.Hour, now)); err == nil {
 		if usage.SevenDay == nil {
-			usage.SevenDay = &UsageProgress{Utilization: 0}
+			usage.SevenDay = &UsageProgress{UtilizationUnknown: true}
 		}
 		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
 	}
@@ -828,13 +925,7 @@ func isOpenAICodexSnapshotStale(account *Account, now time.Time) bool {
 	if account == nil || !account.IsOpenAIOAuth() {
 		return false
 	}
-	// 普通账号的 codex 刷新走 probe(/responses 头),要求 WSv2;但 spark 影子走 QueryUsage
-	// (/wham/usage body 的 codex_bengalfox),与 WSv2 无关——不能用 WSv2 门控其 staleness,否则首刷后
-	// codex_5h/7d 已存在→staleness 恒 false→spark 窗口永久冻结(外审第9轮 P1)。影子改按
-	// codex_usage_updated_at TTL 判定;实际查询频率仍由 shouldProbeOpenAICodexSnapshot 的缓存 TTL 节流。
-	if !account.IsShadow() && !account.IsOpenAIResponsesWebSocketV2Enabled() {
-		return false
-	}
+	// Quota API reads do not depend on the inference transport being WSv2.
 	if account.Extra == nil {
 		return true
 	}
@@ -1431,7 +1522,7 @@ func (s *AccountUsageService) addWindowStats(ctx context.Context, account *Accou
 	}
 
 	// 为 FiveHour 添加 WindowStats（5h 窗口统计）
-	if usage.FiveHour != nil {
+	if usage.FiveHour != nil && !usage.FiveHour.NotApplicable {
 		usage.FiveHour.WindowStats = windowStats
 	}
 }
@@ -1596,6 +1687,7 @@ func buildCodexUsageProgressFromExtra(extra map[string]any, window string, now t
 	// 窗口已过期（resetAt 在 now 之前）→ 额度已重置，归零
 	if progress.ResetsAt != nil && !now.Before(*progress.ResetsAt) {
 		progress.Utilization = 0
+		progress.UtilizationUnknown = true
 	}
 
 	return progress
@@ -1697,139 +1789,66 @@ func (s *AccountUsageService) tryClearRecoverableAccountError(ctx context.Contex
 	account.ErrorMessage = ""
 }
 
-// buildUsageInfo 构建UsageInfo
+// buildUsageInfo retains measured zeroes but marks absent/null values as unknown.
 func (s *AccountUsageService) buildUsageInfo(resp *ClaudeUsageResponse, updatedAt *time.Time) *UsageInfo {
-	info := &UsageInfo{
-		UpdatedAt: updatedAt,
-	}
-
-	// 5小时窗口 - 始终创建对象（即使 ResetsAt 为空）
-	info.FiveHour = &UsageProgress{
-		Utilization: resp.FiveHour.Utilization,
-	}
-	if resp.FiveHour.ResetsAt != "" {
-		if fiveHourReset, err := parseTime(resp.FiveHour.ResetsAt); err == nil {
-			info.FiveHour.ResetsAt = &fiveHourReset
-			info.FiveHour.RemainingSeconds = int(time.Until(fiveHourReset).Seconds())
-		} else {
-			log.Printf("Failed to parse FiveHour.ResetsAt: %s, error: %v", resp.FiveHour.ResetsAt, err)
+	build := func(name string, utilization float64, reset string, required bool) *UsageProgress {
+		missing := resp.MissingUtilization[name]
+		if required && resp.NullWindows[name] {
+			progress := &UsageProgress{UtilizationUnknown: true, NotApplicable: true, MeasurementSource: "quota_api"}
+			if updatedAt != nil {
+				progress.SampledAt = updatedAt.Unix()
+			}
+			return progress
 		}
-	}
-
-	// 7天窗口
-	if resp.SevenDay.ResetsAt != "" {
-		if sevenDayReset, err := parseTime(resp.SevenDay.ResetsAt); err == nil {
-			info.SevenDay = &UsageProgress{
-				Utilization:      resp.SevenDay.Utilization,
-				ResetsAt:         &sevenDayReset,
-				RemainingSeconds: int(time.Until(sevenDayReset).Seconds()),
-			}
-		} else {
-			log.Printf("Failed to parse SevenDay.ResetsAt: %s, error: %v", resp.SevenDay.ResetsAt, err)
-			info.SevenDay = &UsageProgress{
-				Utilization: resp.SevenDay.Utilization,
-			}
+		if !required && reset == "" && utilization == 0 && (resp.MissingUtilization == nil || missing) {
+			return nil
 		}
-	}
-
-	// 7天Sonnet窗口
-	if resp.SevenDaySonnet.ResetsAt != "" {
-		if sonnetReset, err := parseTime(resp.SevenDaySonnet.ResetsAt); err == nil {
-			info.SevenDaySonnet = &UsageProgress{
-				Utilization:      resp.SevenDaySonnet.Utilization,
-				ResetsAt:         &sonnetReset,
-				RemainingSeconds: int(time.Until(sonnetReset).Seconds()),
-			}
-		} else {
-			log.Printf("Failed to parse SevenDaySonnet.ResetsAt: %s, error: %v", resp.SevenDaySonnet.ResetsAt, err)
-			info.SevenDaySonnet = &UsageProgress{
-				Utilization: resp.SevenDaySonnet.Utilization,
-			}
+		progress := &UsageProgress{Utilization: utilization, UtilizationUnknown: missing, MeasurementSource: "quota_api"}
+		if updatedAt != nil {
+			progress.SampledAt = updatedAt.Unix()
 		}
-	}
-
-	// 7天Fable窗口（响应头 7d_oi 对应的窗口）
-	if fable := resp.SevenDayOverageIncluded; fable.ResetsAt != "" {
-		if fableReset, err := parseTime(fable.ResetsAt); err == nil {
-			info.SevenDayFable = &UsageProgress{
-				Utilization:      fable.Utilization,
-				ResetsAt:         &fableReset,
-				RemainingSeconds: int(time.Until(fableReset).Seconds()),
-			}
-		} else {
-			log.Printf("Failed to parse SevenDayFable.ResetsAt: %s, error: %v", fable.ResetsAt, err)
-			info.SevenDayFable = &UsageProgress{
-				Utilization: fable.Utilization,
-			}
+		if math.IsNaN(utilization) || math.IsInf(utilization, 0) || utilization < 0 {
+			progress.Utilization = 0
+			progress.UtilizationUnknown = true
 		}
-	}
-
-	return info
-}
-
-// estimateSetupTokenUsage 根据session_window推算Setup Token账号的使用量
-func (s *AccountUsageService) estimateSetupTokenUsage(account *Account) *UsageInfo {
-	info := &UsageInfo{}
-
-	// 如果有session_window信息
-	if account.SessionWindowEnd != nil {
-		remaining := int(time.Until(*account.SessionWindowEnd).Seconds())
-		if remaining < 0 {
-			remaining = 0
-		}
-
-		// 优先使用响应头中存储的真实 utilization 值（0-1 小数，转为 0-100 百分比）
-		var utilization float64
-		var found bool
-		if stored, ok := account.Extra["session_window_utilization"]; ok {
-			switch v := stored.(type) {
-			case float64:
-				utilization = v * 100
-				found = true
-			case json.Number:
-				if f, err := v.Float64(); err == nil {
-					utilization = f * 100
-					found = true
+		if reset != "" {
+			if resetAt, err := parseTime(reset); err == nil {
+				progress.ResetsAt = &resetAt
+				progress.RemainingSeconds = max(0, int(time.Until(resetAt).Seconds()))
+				if !resetAt.After(time.Now()) {
+					progress.UtilizationUnknown = true
 				}
 			}
 		}
-
-		// 如果没有存储的 utilization，回退到状态估算
-		if !found {
-			switch account.SessionWindowStatus {
-			case "rejected":
-				utilization = 100.0
-			case "allowed_warning":
-				utilization = 80.0
-			}
-		}
-
-		info.FiveHour = &UsageProgress{
-			Utilization:      utilization,
-			ResetsAt:         account.SessionWindowEnd,
-			RemainingSeconds: remaining,
-		}
-
-		// 窗口已过期（resetAt 在 now 之前）→ 额度已重置，归零；
-		// 与 Codex 分支 buildCodexUsageProgressFromExtra 保持一致，避免
-		// UI 在 active poll 没回写 SessionWindowEnd 时渲染矛盾状态。
-		if info.FiveHour.ResetsAt != nil && !time.Now().Before(*info.FiveHour.ResetsAt) {
-			info.FiveHour.Utilization = 0
-			info.FiveHour.ResetsAt = nil
-			info.FiveHour.RemainingSeconds = 0
-		}
-	} else {
-		// 没有窗口信息，返回空数据
-		info.FiveHour = &UsageProgress{
-			Utilization:      0,
-			RemainingSeconds: 0,
-		}
+		return progress
 	}
-
-	// Setup Token无法获取7d数据
-	return info
+	return &UsageInfo{
+		UpdatedAt:      updatedAt,
+		FiveHour:       build("five_hour", resp.FiveHour.Utilization, resp.FiveHour.ResetsAt, true),
+		SevenDay:       build("seven_day", resp.SevenDay.Utilization, resp.SevenDay.ResetsAt, false),
+		SevenDaySonnet: build("seven_day_sonnet", resp.SevenDaySonnet.Utilization, resp.SevenDaySonnet.ResetsAt, false),
+		SevenDayFable:  build("seven_day_overage_included", resp.SevenDayOverageIncluded.Utilization, resp.SevenDayOverageIncluded.ResetsAt, false),
+	}
 }
 
+// estimateSetupTokenUsage exposes only measured upstream utilization. A missing
+// sample, an expired window, or a scheduling status cannot establish a percentage.
+func (s *AccountUsageService) estimateSetupTokenUsage(account *Account) *UsageInfo {
+	progress := &UsageProgress{UtilizationUnknown: true}
+	info := &UsageInfo{FiveHour: progress}
+	if account.SessionWindowEnd == nil || !time.Now().Before(*account.SessionWindowEnd) {
+		return info
+	}
+	utilization, measured := sampledUtilization(account.Extra["session_window_utilization"])
+	if !measured {
+		return info
+	}
+	progress.Utilization = utilization * 100
+	progress.UtilizationUnknown = false
+	progress.ResetsAt = account.SessionWindowEnd
+	progress.RemainingSeconds = int(time.Until(*account.SessionWindowEnd).Seconds())
+	return info
+}
 func buildGeminiUsageProgress(used, limit int64, resetAt time.Time, tokens int64, cost float64, now time.Time) *UsageProgress {
 	// limit <= 0 means "no local quota window" (unknown or unlimited).
 	if limit <= 0 {

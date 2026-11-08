@@ -3,14 +3,15 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AccountUsageCell from '../AccountUsageCell.vue'
 import type { Account } from '@/types'
 
-const { getUsage } = vi.hoisted(() => ({
-  getUsage: vi.fn()
+const { getUsage, queryOpenAIQuota } = vi.hoisted(() => ({
+  getUsage: vi.fn(),
+  queryOpenAIQuota: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
-      getUsage
+      getUsage, queryOpenAIQuota
     }
   }
 }))
@@ -115,6 +116,11 @@ const cnUsageCellStubs = {
 describe('AccountUsageCell', () => {
   beforeEach(() => {
     getUsage.mockReset()
+    queryOpenAIQuota.mockReset()
+    queryOpenAIQuota.mockResolvedValue({ fetched_at: 1800000000, rate_limit: {
+      primary_window: { used_percent: 18, limit_window_seconds: 18000, reset_at: 1800010000 },
+      secondary_window: { used_percent: 48, limit_window_seconds: 604800, reset_at: 1800500000 }
+    } })
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation(() => ({
@@ -750,10 +756,9 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     // 手动刷新再拉一次
-    expect(getUsage).toHaveBeenCalledTimes(2)
-    expect(getUsage).toHaveBeenCalledWith(2010)
-    // 单一数据源：始终使用 /usage API 值
-    expect(wrapper.text()).toContain('5h|18|900')
+    expect(getUsage).toHaveBeenCalledTimes(1)
+    expect(queryOpenAIQuota).toHaveBeenLastCalledWith(2010)
+    expect(wrapper.text()).toContain('5h|18|')
   })
 
   it('OpenAI OAuth 在无 codex 快照时会回退显示 usage 接口窗口', async () => {
@@ -1965,5 +1970,309 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|56')
     expect(wrapper.text()).not.toContain('7d S')
     expect(wrapper.text()).not.toContain('7d F')
+  })
+})
+
+
+describe('AccountUsageCell explicit quota refresh', () => {
+  const oldUsage = {
+    source: 'passive',
+    five_hour: { utilization: 12, resets_at: null, remaining_seconds: 0 },
+    seven_day: { utilization: 34, resets_at: null, remaining_seconds: 0 }
+  }
+  const freshUsage = {
+    ...oldUsage,
+    source: 'active',
+    five_hour: { ...oldUsage.five_hour, utilization: 27 },
+    seven_day: { ...oldUsage.seven_day, utilization: 48 }
+  }
+  const stubs = {
+    UsageProgressBar: {
+      props: ['label', 'utilization'],
+      template: '<div>{{ label }}|{{ utilization }}</div>'
+    },
+    ClaudeResetCreditsCell: { template: '<div><slot name="pre-actions" /></div>' },
+    OpenAIQuotaResetCell: { props: ['liveQuota'], template: '<div><slot name="pre-actions" /></div>' },
+    AccountQuotaInfo: true
+  }
+  function render(accountId: number, platform: 'openai' | 'anthropic', managed = false) {
+    return mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: accountId, platform, type: 'oauth' }),
+        ...(managed ? { batchedUsage: oldUsage as any, requestBatchedUsage: vi.fn() } : {})
+      },
+      global: { stubs }
+    })
+  }
+  const queryButton = (wrapper: ReturnType<typeof render>) =>
+    wrapper.findAll('button').find(button => button.text() === 'admin.accounts.usageWindow.activeQuery')!
+
+  beforeEach(() => {
+    getUsage.mockReset()
+    queryOpenAIQuota.mockReset()
+    queryOpenAIQuota.mockResolvedValue({ fetched_at: 1800000000, rate_limit: {
+      primary_window: { used_percent: 27, limit_window_seconds: 18000, reset_at: 1800010000 },
+      secondary_window: { used_percent: 48, limit_window_seconds: 604800, reset_at: 1800500000 }
+    } })
+  })
+
+  it('updates the window bars when the points/reset-credit query publishes fresh quota', async () => {
+    const wrapper = render(98009, 'openai', true)
+    await flushPromises()
+    expect(wrapper.text()).toContain('7d|34')
+    wrapper.findComponent(stubs.OpenAIQuotaResetCell).vm.$emit('quota-updated', {
+      fetched_at: 1800000000,
+      rate_limit: { primary_window: { used_percent: 71, limit_window_seconds: 604800, reset_at: 1800500000 } }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('7d|71')
+    expect(wrapper.text()).not.toContain('5h|12')
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it.each(['openai', 'anthropic'] as const)('replaces %s cached windows after a direct query', async platform => {
+    const id = platform === 'openai' ? 98001 : 98002
+    getUsage.mockResolvedValueOnce(oldUsage).mockResolvedValueOnce(freshUsage)
+    const wrapper = render(id, platform)
+    await flushPromises()
+    expect(wrapper.text()).toContain('7d|34')
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    if (platform === 'openai') expect(queryOpenAIQuota).toHaveBeenLastCalledWith(id)
+    else expect(getUsage).toHaveBeenLastCalledWith(id, 'active', true)
+    expect(wrapper.text()).toContain('5h|27')
+    expect(wrapper.text()).toContain('7d|48')
+    wrapper.unmount()
+    expect(getUsage).toHaveBeenCalledTimes(platform === 'openai' ? 1 : 2)
+  })
+
+  it('preserves the last known windows and shows query failures', async () => {
+    queryOpenAIQuota.mockRejectedValueOnce({ response: { data: { message: 'Upstream returned 429' } } })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = render(98003, 'openai', true)
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('Upstream returned 429')
+    expect(wrapper.text()).toContain('7d|34')
+    expect(queryButton(wrapper).attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+    logged.mockRestore()
+  })
+
+  it('keeps saved windows and reports an empty live quota response', async () => {
+    queryOpenAIQuota.mockResolvedValueOnce({ fetched_at: 1800000000, rate_limit: null })
+    const wrapper = render(98004, 'openai', true)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('admin.accounts.usageWindow.noLiveWindows')
+    expect(wrapper.text()).toContain('7d|34')
+    wrapper.unmount()
+    logged.mockRestore()
+  })
+
+  it('does not let an older automatic request overwrite a completed manual query', async () => {
+    let resolveOlder!: (value: typeof oldUsage) => void
+    getUsage.mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve }))
+      .mockResolvedValueOnce(freshUsage)
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98005, platform: 'anthropic', type: 'oauth' }) }, global: { stubs }
+    })
+    await flushPromises()
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    resolveOlder(oldUsage)
+    await flushPromises()
+    expect(wrapper.text()).toContain('7d|48')
+    wrapper.unmount()
+  })
+
+  it('queries setup tokens without requiring scope metadata', async () => {
+    getUsage.mockResolvedValueOnce(oldUsage).mockResolvedValueOnce(freshUsage)
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98006, platform: 'anthropic', type: 'setup-token' }) },
+      global: { stubs }
+    })
+    await flushPromises()
+    const button = queryButton(wrapper)
+    await button.trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenLastCalledWith(98006, 'active', true)
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.liveQueriedAt')
+    expect(wrapper.text()).toContain('7d|48')
+    wrapper.unmount()
+  })
+
+  it('confirms a completed live query even when upstream values have not changed', async () => {
+    queryOpenAIQuota.mockResolvedValueOnce({ fetched_at: 1800000000, rate_limit: {
+      primary_window: { used_percent: 12, limit_window_seconds: 18000 },
+      secondary_window: { used_percent: 34, limit_window_seconds: 604800 }
+    } })
+    const wrapper = render(98007, 'openai', true)
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.liveQueriedAt')
+    expect(wrapper.text()).toContain('7d|34')
+    expect(getUsage).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('queries official usage for a Token account that has profile scope', async () => {
+    getUsage.mockResolvedValueOnce(oldUsage).mockResolvedValueOnce(freshUsage)
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98008, platform: 'anthropic', type: 'setup-token',
+        credentials: { scope: 'user:inference user:profile' } }) }, global: { stubs }
+    })
+    await flushPromises()
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenLastCalledWith(98008, 'active', true)
+    expect(wrapper.text()).toContain('5h|27')
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.liveQueriedAt')
+    wrapper.unmount()
+  })
+
+  it('does not replace measured 7d data with a legacy setup-token 5h estimate', async () => {
+    const saved = { ...oldUsage, seven_day: { utilization: 96, resets_at: '2099-01-01T00:00:00Z' } }
+    getUsage.mockResolvedValueOnce(saved)
+      .mockResolvedValueOnce({ five_hour: { utilization: 100 }, seven_day: null })
+      .mockResolvedValueOnce(saved)
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98101, platform: 'anthropic', type: 'setup-token' }) }, global: { stubs }
+    })
+    await flushPromises()
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenLastCalledWith(98101, 'passive', true)
+    expect(wrapper.text()).toContain('7d|96')
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.savedSampleOnly')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.liveQueriedAt')
+    wrapper.unmount()
+  })
+
+  it('keeps the available 7d sample visible when an official Claude refresh fails', async () => {
+    const saved = { ...oldUsage, seven_day: { utilization: 96, resets_at: '2099-01-01T00:00:00Z' } }
+    getUsage.mockResolvedValueOnce(saved).mockRejectedValueOnce({ message: 'upstream returned 403' })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98102, platform: 'anthropic', type: 'setup-token' }) },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await flushPromises()
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('96%')
+    expect(wrapper.get('[role="alert"]').text()).toBe('upstream returned 403')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+    logged.mockRestore()
+  })
+
+  it('does not report an all-unknown official Claude response as a successful measurement', async () => {
+    getUsage.mockResolvedValueOnce({ source: 'active', five_hour: { utilization: 0, utilization_unknown: true } })
+    const wrapper = render(98103, 'anthropic', true)
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.liveMeasurementUnavailable')
+    wrapper.unmount()
+  })
+
+  it('shows a confirmed absent Claude 5h window alongside the actual weekly measurement', async () => {
+    getUsage.mockResolvedValueOnce({ source: 'active',
+      five_hour: { utilization: 0, utilization_unknown: true, not_applicable: true, measurement_source: 'quota_api', sampled_at: Date.now() / 1000 },
+      seven_day: { utilization: 29 }
+    })
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98112, platform: 'anthropic', type: 'oauth' }), batchedUsage: oldUsage as any, requestBatchedUsage: vi.fn() },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('usage.quotaNotApplicable')
+    expect(wrapper.text()).toContain('29%')
+    expect(wrapper.text()).not.toContain('0%')
+    wrapper.unmount()
+  })
+
+  it('fetches fresh passive 5h samples after an official query failure and discloses the failure', async () => {
+    const saved = { source: 'passive', updated_at: new Date().toISOString(), five_hour: {
+      utilization: 42, measurement_source: 'response_headers', sampled_at: Date.now() / 1000, resets_at: '2099-01-01T00:00:00Z'
+    } }
+    getUsage.mockRejectedValueOnce({ message: 'usage endpoint denied' }).mockResolvedValueOnce(saved)
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98113, platform: 'anthropic', type: 'setup-token' }), batchedUsage: oldUsage as any, requestBatchedUsage: vi.fn() },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenLastCalledWith(98113, 'passive', true)
+    expect(wrapper.text()).toContain('42%')
+    expect(wrapper.get('[role="alert"]').text()).toContain('usage endpoint denied')
+    expect(wrapper.get('[role="status"]').text()).toBe('admin.accounts.usageWindow.savedSampleAt')
+    wrapper.unmount()
+  })
+
+  it('passes reset credits and points from a window query to the same account card', async () => {
+    const response = { fetched_at: 1800000000, rate_limit: { primary_window: { used_percent: 12, limit_window_seconds: 18000 } },
+      rate_limit_reset_credits: { available_count: 2 }, credits: { has_credits: true, unlimited: false, balance: '29188.8533995000' } }
+    queryOpenAIQuota.mockResolvedValueOnce(response)
+    const wrapper = render(98105, 'openai', true)
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(stubs.OpenAIQuotaResetCell).props('liveQuota')).toEqual({ accountID: 98105, quota: response })
+    wrapper.unmount()
+  })
+
+  it('shows an unknown 5h row when OpenAI only returns a measured 7d window', async () => {
+    queryOpenAIQuota.mockResolvedValueOnce({ fetched_at: 1800000000, rate_limit: {
+      primary_window: null, secondary_window: { used_percent: 7, limit_window_seconds: 604800 }
+    } })
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98104, platform: 'openai', type: 'oauth' }), batchedUsage: oldUsage as any, requestBatchedUsage: vi.fn() },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('5h')
+    expect(wrapper.text()).toContain('usage.quotaUnknown')
+    expect(wrapper.text()).toContain('7%')
+    wrapper.unmount()
+  })
+
+  it('shows unknown for setup-token quota when the actual upstream query fails', async () => {
+    getUsage.mockResolvedValueOnce(oldUsage).mockRejectedValueOnce({ message: 'upstream returned 403' })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98009, platform: 'anthropic', type: 'setup-token' }) },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await flushPromises()
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenCalledWith(98009, 'active', true)
+    expect(getUsage).toHaveBeenLastCalledWith(98009, 'passive', true)
+    expect(wrapper.get('[role="alert"]').text()).toBe('upstream returned 403')
+    expect(wrapper.text()).toContain('usage.quotaUnknown')
+    expect(wrapper.text()).not.toContain('34%')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+    logged.mockRestore()
+  })
+
+  it('explains the verified user:profile failure without treating it as a zero quota', async () => {
+    getUsage.mockRejectedValueOnce({ reason: 'CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED', message: 'upstream permission error' })
+      .mockResolvedValueOnce({ source: 'passive', five_hour: { utilization: 0, utilization_unknown: true } })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 98114, platform: 'anthropic', type: 'setup-token' }), batchedUsage: oldUsage as any, requestBatchedUsage: vi.fn() },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await queryButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('admin.accounts.usageWindow.claudeProfileScopeRequired')
+    expect(wrapper.text()).not.toContain('0%')
+    wrapper.unmount()
+    logged.mockRestore()
   })
 })

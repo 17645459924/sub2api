@@ -66,6 +66,28 @@ beforeEach(() => {
   vi.mocked(resetOpenAIQuota).mockReset()
 })
 
+describe('OpenAIQuotaResetCell live response synchronization', () => {
+  it('uses the full parent query response for points and the reset count without another request', async () => {
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}) } })
+    await wrapper.setProps({ liveQuota: { accountID: 1, quota: { fetched_at: 1800000000,
+      credits: { has_credits: true, unlimited: false, balance: '29188.8533995000' },
+      rate_limit_reset_credits: { available_count: 2, credits: [{ expires_at: FUTURE_EXPIRY_EARLY }, { expires_at: FUTURE_EXPIRY_LATE }] }
+    } } })
+    expect(wrapper.findAll('button')[0].text()).toContain('2')
+    expect(wrapper.get('[data-testid="codex-credits"]').text()).toContain('29188.8533995000')
+    expect(refreshOpenAIQuota).not.toHaveBeenCalled()
+    await wrapper.setProps({ liveQuota: { accountID: 999, quota: { fetched_at: 1800000001, rate_limit_reset_credits: { available_count: 99 } } } })
+    expect(wrapper.findAll('button')[0].text()).toContain('2')
+    wrapper.unmount()
+  })
+
+  it('does not display zero resets when a successful usage response lacks reset-credit data', () => {
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}), liveQuota: { accountID: 1, quota: { fetched_at: 1800000000 } } } })
+    expect(wrapper.findAll('button')[0].text()).toContain('usage.quotaUnknown')
+    wrapper.unmount()
+  })
+})
+
 describe('OpenAIQuotaResetCell — Codex 点数', () => {
   const points = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-testid="codex-credits"]')
   const balance = { has_credits: true, unlimited: false, balance: '12345678901234567890.0123' }

@@ -57,6 +57,9 @@ func TestEstimateSetupTokenUsage_ExpiredWindowZeroes(t *testing.T) {
 	if info.FiveHour.Utilization != 0 {
 		t.Fatalf("expected Utilization=0 for expired window, got %v", info.FiveHour.Utilization)
 	}
+	if !info.FiveHour.UtilizationUnknown {
+		t.Fatal("expired sample must be unknown, not a measured zero")
+	}
 	if info.FiveHour.ResetsAt != nil {
 		t.Fatalf("expected ResetsAt=nil for expired window, got %v", info.FiveHour.ResetsAt)
 	}
@@ -82,6 +85,9 @@ func TestEstimateSetupTokenUsage_ActiveWindowPreservesUtilization(t *testing.T) 
 	}
 	if info.FiveHour.Utilization != 53 {
 		t.Fatalf("expected Utilization=53, got %v", info.FiveHour.Utilization)
+	}
+	if info.FiveHour.UtilizationUnknown {
+		t.Fatal("valid upstream sample must be known")
 	}
 	if info.FiveHour.ResetsAt == nil || !info.FiveHour.ResetsAt.Equal(future) {
 		t.Fatalf("expected ResetsAt=%v, got %v", future, info.FiveHour.ResetsAt)

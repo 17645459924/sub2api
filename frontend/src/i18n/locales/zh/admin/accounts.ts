@@ -512,6 +512,12 @@ export default {
         }
       },
       usageWindow: {
+    observedWindowSample: '{window} 来自真实请求采样 · {time}',
+    usedQuotaLabel: '已用额度',
+    liveFiveHourUnavailable: '已读取上游 · {time}；上游未返回 5h 额度。',
+    liveMeasurementUnavailable: '本次未取得可验证的实时额度；显示的是保存的采样或未知。',
+    claudeProfileScopeRequired: '此 Token 缺少 user:profile 权限，无法实时查询额度。请重新完成 OAuth 授权，或使用真实请求采样；重复刷新不会补足权限。',
+    monthlyWindow: '月度',
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
         geminiProDaily: 'Pro',
@@ -541,6 +547,11 @@ export default {
         grokLastProbe: '探测 {time}',
         grokLastHeadersSeen: '响应头 {time}',
         passiveSampled: '被动采样',
+        sampledAt: '上游采样 · {time}',
+        savedSampleAt: '已读取保存的采样（{time}），非实时查询；新请求经过此账号后才会更新。',
+        savedSampleOnly: '服务器仅返回已保存的上游采样，本次未取得实时额度。',
+        liveQueriedAt: '已查询上游 · {time}（用量无变化时数值保持不变）',
+        noLiveWindows: '上游未返回 5h / 7d 额度窗口，已保留原数据。',
         activeQuery: '查询',
         estimatedTotalCost: '预计总费用 ${cost}',
         estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'

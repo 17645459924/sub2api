@@ -87,6 +87,12 @@ func TestHandleUpstreamError_AnthropicWindowLimitPreemptsTempUnschedRule(t *test
 	require.Zero(t, repo.tempUnschedCalls, "official Anthropic window limits should not be shortened by local temp-unsched rules")
 	require.Equal(t, 1, repo.rateLimitCalls)
 	require.Equal(t, resetAt, repo.lastRateLimitReset)
+	account.Extra = repo.lastExtraUpdates
+	usage := &UsageInfo{}
+	applyClaudeObservations(usage, account, nil, time.Now())
+	require.NotNil(t, usage.FiveHour, "429 quota headers must be captured before the account stops receiving traffic")
+	require.InDelta(t, 102.0, usage.FiveHour.Utilization, 0.0001)
+	require.Equal(t, "response_headers", usage.FiveHour.MeasurementSource)
 }
 
 // fable429Headers 构造 7d_oi（Fable 专属 7d 窗口）触发 429 的完整响应头，

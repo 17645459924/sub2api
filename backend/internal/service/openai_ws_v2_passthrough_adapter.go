@@ -1276,6 +1276,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				_ = clientConn.CloseNow()
 			},
 			BeforeWriteClient: func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error {
+				s.observeCodexQuotaEvent(account, payload)
 				if msgType != coderws.MessageText {
 					return nil
 				}

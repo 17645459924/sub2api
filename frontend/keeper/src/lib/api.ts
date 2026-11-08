@@ -1,0 +1,1154 @@
+import { sub2apiFetch } from '../integration/sub2api'
+import { type AnalysisLatencyDiagnostics, type AnalysisResponse, type CredentialsManagementResponse, type AuthManagedSessionsResponse, type AuthSessionResponse, type CodexQuotaHistoryResponse, type CpaApiKeyDisplayItem, type CpaApiKeyOptionsResponse, type CpaApiKeySettingsResponse, type CpaApiKeysResponse, type ErrorEventsResponse, type OverviewRealtimeBlock, type OverviewRealtimeWindow, type PricingSyncSource, type QuotaAutoRefreshSettings, type StatusResponse, type UpdateCheckResponse, type UsageActivityRequest, type UsageActivityResponse, type UsageEventModelFilterOptionsResponse, type UsageEventRequestLogResponse, type UsageEventSourceFilterOptionsResponse, type UsageRangeRequest, type UsageIdentitiesPageResponse, type UsageIdentitiesResponse, type UsageEventsResponse, type UsageIdentity, type UsageIdentityAuthType, type UsageOverviewComparisons, type UsageOverviewResponse, type UsageQuotaCacheResponse, type UsageQuotaInspectionStatusResponse, type UsageQuotaRefreshResponse, type UsageQuotaRefreshTaskResponse, type UsageQuotaResetCreditsResponse, type UsageQuotaResetResponse, type VersionResponse } from './types'
+import type { DeletePricingModelResponse, ModelPricingConfig, PricingErrorResponse, PricingFieldError, PricingModelOptionsResponse, PricingModelsResponse, PricingRecalculationOptions, PricingRecalculationTask, PricingSyncApplyRequest, PricingSyncApplyResponse, PricingSyncFetchResponse, SavePricingModelResponse, StartPricingRecalculationRequest, StartPricingRecalculationResponse } from './types'
+import { isCPAMCEmbed } from '@/embed/cpamcEmbed'
+import { resolveUsageRequestRange } from '@/utils/usage/rangeQuery'
+
+export class ApiError extends Error {
+  status: number
+  code?: string
+  // 价格表单按字段路径标红，分支冲突用 branch_ids 指明双方。
+  fields?: PricingFieldError[]
+
+  constructor(message: string, status: number, code?: string, fields?: PricingFieldError[]) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.fields = fields
+  }
+}
+
+export const MIGRATION_IN_PROGRESS_EVENT = 'keeper:migration-in-progress'
+
+export interface MigrationInProgressEventDetail {
+  requestSequence: number
+}
+
+let apiRequestSequence = 0
+
+// 标记最近发出的 API 请求，让启动门禁忽略恢复 ready 前发出的迁移晚响应。
+export const latestApiRequestSequence = (): number => apiRequestSequence
+
+export const isUsageRangeBoundsConflict = (error: unknown): error is ApiError => (
+  error instanceof ApiError && error.status === 409
+)
+
+// 手工费用重算期间的普通暂缓响应不改变登录态，也不进入启动迁移门禁。
+export const isCostsBusy = (error: unknown): error is ApiError => (
+  error instanceof ApiError && error.status === 503 && error.code === 'costs_busy'
+)
+
+const APP_BASE_PATH_PLACEHOLDER = '__APP_BASE_PATH__'
+const EMBED_SESSION_STORAGE_KEY = 'cpa_usage_keeper_embed_session'
+const EMBED_SESSION_HEADER = 'X-CPA-Usage-Keeper-Embed-Session'
+
+declare global {
+  interface Window {
+    __APP_BASE_PATH__?: string
+  }
+}
+
+function normalizeBasePath(basePath: string | undefined): string {
+  if (!basePath || basePath === '/' || basePath === APP_BASE_PATH_PLACEHOLDER) {
+    return ''
+  }
+  return basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
+}
+
+function realtimeBucketSecondsForWindow(window: OverviewRealtimeWindow): number {
+  if (window === '60m') return 120
+  if (window === '30m') return 60
+  return 30
+}
+
+function normalizeOverviewRealtimeBlock(
+  block: Partial<OverviewRealtimeBlock> & {
+    current_usage?: Partial<OverviewRealtimeBlock['current_usage']>;
+  },
+  fallbackWindow?: OverviewRealtimeWindow,
+): OverviewRealtimeBlock {
+  const currentUsage: Partial<OverviewRealtimeBlock['current_usage']> = block.current_usage ?? {}
+  const resolvedWindow = block.window ?? fallbackWindow ?? '15m'
+  return {
+    window: resolvedWindow,
+    insights: block.insights,
+    // 旧响应缺字段时速度明确不可用，继续复用这一轮 Realtime 请求。
+    model_speed: {
+      available: block.model_speed?.available ?? false,
+      start: block.model_speed?.start,
+      mid: block.model_speed?.mid,
+      end: block.model_speed?.end,
+      series: block.model_speed?.series ?? [],
+    },
+    timezone: block.timezone,
+    bucket_seconds: block.bucket_seconds ?? realtimeBucketSecondsForWindow(resolvedWindow),
+    window_start: block.window_start,
+    window_end: block.window_end,
+    token_velocity: block.token_velocity ?? [],
+    latency_scatter: {
+      points: block.latency_scatter?.points ?? [],
+      total_points: block.latency_scatter?.total_points ?? 0,
+      p95_ttft_ms: block.latency_scatter?.p95_ttft_ms ?? 0,
+      p95_latency_ms: block.latency_scatter?.p95_latency_ms ?? 0,
+      max_ttft_ms: block.latency_scatter?.max_ttft_ms ?? 0,
+      max_latency_ms: block.latency_scatter?.max_latency_ms ?? 0,
+    },
+    current_usage: {
+      models: currentUsage.models ?? [],
+      api_keys: currentUsage.api_keys ?? [],
+      credentials: currentUsage.credentials ?? [],
+      ai_providers: currentUsage.ai_providers ?? [],
+    },
+    request_level: block.request_level ?? [],
+    cache_level: block.cache_level ?? [],
+  }
+}
+
+export interface FetchKeyOverviewRealtimeOptions {
+  window?: OverviewRealtimeWindow
+  signal?: AbortSignal
+}
+
+export interface FetchUsageOverviewRealtimeOptions extends FetchKeyOverviewRealtimeOptions {
+  apiKeyId?: string
+}
+
+interface EmbedLoginResponse {
+  session_token?: string
+}
+
+export function appPath(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizeBasePath(window.__APP_BASE_PATH__)}${normalizedPath}`
+}
+
+export function apiPath(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizeBasePath(window.__APP_BASE_PATH__)}/api/v1${normalizedPath}`
+}
+
+async function parseApiError(response: Response, fallback: string): Promise<never> {
+  let message = fallback
+  let code: string | undefined
+  let fields: PricingFieldError[] | undefined
+  try {
+    const payload = await response.json() as Partial<PricingErrorResponse> & { error?: string }
+    if (payload.error) {
+      message = payload.error
+    } else if (payload.message) {
+      message = payload.message
+    }
+    code = payload.code
+    fields = Array.isArray(payload.fields) ? payload.fields : undefined
+  } catch {
+    // ignore invalid error payloads
+  }
+  throw new ApiError(message, response.status, code, fields)
+}
+
+function isMutatingMethod(method: string | undefined): boolean {
+  const normalized = (method ?? 'GET').toUpperCase()
+  return normalized !== 'GET' && normalized !== 'HEAD'
+}
+
+function embedSessionStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage ?? null
+  } catch {
+    return null
+  }
+}
+
+function readEmbedSessionToken(): string {
+  if (!isCPAMCEmbed()) return ''
+  const storage = embedSessionStorage()
+  if (!storage) return ''
+  try {
+    return storage.getItem(EMBED_SESSION_STORAGE_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function storeEmbedSessionToken(token: string): void {
+  const trimmed = token.trim()
+  if (!trimmed) return
+  const storage = embedSessionStorage()
+  if (!storage) return
+  try {
+    storage.setItem(EMBED_SESSION_STORAGE_KEY, trimmed)
+  } catch {
+    // 浏览器可能在隐私/嵌入场景禁用 sessionStorage；此时保持 cookie-first 行为即可。
+  }
+}
+
+export function clearEmbedSessionToken(): void {
+  const storage = embedSessionStorage()
+  if (!storage) return
+  try {
+    storage.removeItem(EMBED_SESSION_STORAGE_KEY)
+  } catch {
+    // 清理 fallback token 是 best-effort，不能阻断登录/登出流程。
+  }
+}
+
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const requestSequence = ++apiRequestSequence
+  const headers = new Headers(init?.headers)
+  if (isMutatingMethod(init?.method)) {
+    headers.set('X-CPA-Usage-Keeper-Request', 'fetch')
+  }
+  if (isCPAMCEmbed()) {
+    headers.set('X-CPA-Usage-Keeper-Embed', 'cpamc')
+    const embedSessionToken = readEmbedSessionToken()
+    if (embedSessionToken) {
+      headers.set(EMBED_SESSION_HEADER, embedSessionToken)
+    }
+  }
+  const response = await sub2apiFetch(input, {
+    ...init,
+    credentials: 'include',
+    headers,
+  })
+  if (response.status === 503 && typeof window !== 'undefined') {
+    try {
+      const payload = await response.clone().json() as { code?: string }
+      // 仅迁移专用错误会令已有页面退回启动页；costs_busy 仍由原业务处理。
+      if (payload.code === 'migration_in_progress') {
+        window.dispatchEvent(new CustomEvent<MigrationInProgressEventDetail>(MIGRATION_IN_PROGRESS_EVENT, {
+          detail: { requestSequence },
+        }))
+      }
+    } catch {
+      // 非标准 503 响应交由原请求调用方处理。
+    }
+  }
+  if (response.status === 401) {
+    clearEmbedSessionToken()
+  }
+  return response
+}
+
+export async function getSession(signal?: AbortSignal): Promise<AuthSessionResponse> {
+  const response = await apiFetch(apiPath('/auth/session'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load auth session: ${response.status}`)
+  }
+  const session = await response.json()
+  if (isCPAMCEmbed() && !session.authenticated) {
+    clearEmbedSessionToken()
+  }
+  return session
+}
+
+export async function startOIDCLogin(returnTo: string): Promise<{ authorization_url: string }> {
+  const response = await apiFetch(apiPath('/auth/oidc/login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ return_to: returnTo }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Unable to start OIDC login: ${response.status}`)
+  }
+  return await response.json()
+}
+
+async function readEmbedLoginResponse(response: Response): Promise<EmbedLoginResponse> {
+  if (!isCPAMCEmbed()) return {}
+  try {
+    return await response.json() as EmbedLoginResponse
+  } catch {
+    return {}
+  }
+}
+
+async function activateEmbedSessionFallback(response: Response): Promise<void> {
+  const payload = await readEmbedLoginResponse(response)
+  if (!payload.session_token) return
+  const session = await getSession()
+  if (!session.authenticated) {
+    storeEmbedSessionToken(payload.session_token)
+  }
+}
+
+export async function login(password: string): Promise<void> {
+  if (isCPAMCEmbed()) {
+    clearEmbedSessionToken()
+  }
+  const response = await apiFetch(apiPath('/auth/login'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to login: ${response.status}`)
+  }
+  await activateEmbedSessionFallback(response)
+}
+
+export async function loginWithCPAAPIKey(apiKey: string): Promise<void> {
+  if (isCPAMCEmbed()) {
+    clearEmbedSessionToken()
+  }
+  const response = await apiFetch(apiPath('/auth/api-key-login'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ apiKey }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to login with CPA API key: ${response.status}`)
+  }
+  await activateEmbedSessionFallback(response)
+}
+
+export async function logout(): Promise<void> {
+  try {
+    const response = await apiFetch(apiPath('/auth/logout'), {
+      method: 'POST',
+    })
+    if (!response.ok) {
+      await parseApiError(response, `Failed to logout: ${response.status}`)
+    }
+  } finally {
+    clearEmbedSessionToken()
+  }
+}
+
+export async function fetchAuthSessions(signal?: AbortSignal): Promise<AuthManagedSessionsResponse> {
+  const response = await apiFetch(apiPath('/auth/sessions'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load auth sessions: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function revokeAuthSession(id: string): Promise<void> {
+  const response = await apiFetch(apiPath(`/auth/sessions/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to revoke auth session: ${response.status}`)
+  }
+}
+
+export async function updateAuthSessionAlias(id: string, alias: string): Promise<AuthManagedSessionsResponse['items'][number]> {
+  const response = await apiFetch(apiPath(`/auth/sessions/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ alias }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update auth session alias: ${response.status}`)
+  }
+  return response.json()
+}
+
+// Namespaced account selections share the upstream toolbar without sharing ID semantics.
+function applyUsageScope(params: URLSearchParams, selection: string) {
+  if (selection.startsWith('account:')) {
+    const id = selection.slice('account:'.length)
+    if (!/^[1-9]\d*$/.test(id)) throw new Error('Invalid account selection')
+    params.set('account_id', id)
+  } else params.set('api_key_id', selection)
+}
+
+const buildUsageRangeParams = (request: UsageRangeRequest): URLSearchParams => {
+  const params = new URLSearchParams()
+  params.set('range', resolveUsageRequestRange(request.range))
+  if (request.unit) {
+    params.set('unit', request.unit)
+  }
+  if (request.start) {
+    params.set('start', request.start)
+  }
+  if (request.end) {
+    params.set('end', request.end)
+  }
+  return params
+}
+
+export async function fetchKeyOverview(request: UsageRangeRequest, signal?: AbortSignal): Promise<UsageOverviewResponse> {
+  const params = buildUsageRangeParams(request)
+  const response = await apiFetch(`${apiPath('/key-overview')}?${params.toString()}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load key overview: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchKeyAnalysis(request: UsageRangeRequest, signal?: AbortSignal): Promise<AnalysisResponse> {
+  const params = buildUsageRangeParams(request)
+  const response = await apiFetch(`${apiPath('/key-analysis')}?${params.toString()}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load key analysis: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchKeyAnalysisLatency(request: UsageRangeRequest, signal?: AbortSignal): Promise<AnalysisLatencyDiagnostics> {
+  const params = buildUsageRangeParams(request)
+  const response = await apiFetch(`${apiPath('/key-analysis/latency')}?${params.toString()}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load key analysis latency: ${response.status}`)
+  }
+  return response.json()
+}
+
+export interface FetchUsageActivityOptions {
+  request: UsageActivityRequest
+  apiKeyId?: string
+  signal?: AbortSignal
+}
+
+const buildUsageActivityParams = (request: UsageActivityRequest): URLSearchParams => {
+  // 显式 Activity window 使用 window 参数；其余选择复用 Overview 的 range 参数。
+  if ('window' in request) {
+    const params = new URLSearchParams()
+    params.set('window', request.window)
+    return params
+  }
+  return buildUsageRangeParams(request)
+}
+
+export async function fetchKeyActivity({ request, signal }: FetchUsageActivityOptions): Promise<UsageActivityResponse> {
+  const params = buildUsageActivityParams(request)
+  const response = await apiFetch(`${apiPath('/key-activity')}?${params.toString()}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load key activity: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchKeyOverviewRealtime(options: FetchKeyOverviewRealtimeOptions = {}): Promise<OverviewRealtimeBlock> {
+  const { window, signal } = options
+  const params = new URLSearchParams()
+  if (window) {
+    params.set('window', window)
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/key-overview/realtime')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load key overview realtime: ${response.status}`)
+  }
+  const payload = await response.json() as Partial<OverviewRealtimeBlock> & {
+    current_usage?: Partial<OverviewRealtimeBlock['current_usage']>;
+  }
+  return normalizeOverviewRealtimeBlock(payload, window)
+}
+
+export async function fetchUsageOverview(request: UsageRangeRequest, signal?: AbortSignal, apiKeyId?: string): Promise<UsageOverviewResponse> {
+  const params = buildUsageRangeParams(request)
+  const selectedAPIKeyId = apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/overview')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage overview: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageOverviewComparisons(request: UsageRangeRequest, options: { signal?: AbortSignal; apiKeyId?: string; keyViewer?: boolean } = {}): Promise<UsageOverviewComparisons> {
+  const params = buildUsageRangeParams(request)
+  const selectedAPIKeyId = options.apiKeyId?.trim()
+  if (selectedAPIKeyId) applyUsageScope(params, selectedAPIKeyId)
+  const path = options.keyViewer ? '/key-overview/comparisons' : '/usage/overview/comparisons'
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath(path)}${query ? `?${query}` : ''}`, { signal: options.signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage overview comparisons: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageActivity({ request, apiKeyId, signal }: FetchUsageActivityOptions): Promise<UsageActivityResponse> {
+  const params = buildUsageActivityParams(request)
+  const selectedAPIKeyId = apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  const response = await apiFetch(`${apiPath('/usage/activity')}?${params.toString()}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage activity: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageOverviewRealtime(options: FetchUsageOverviewRealtimeOptions = {}): Promise<OverviewRealtimeBlock> {
+  const { signal, apiKeyId, window } = options
+  const params = new URLSearchParams()
+  const selectedAPIKeyId = apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  if (window) {
+    params.set('window', window)
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/overview/realtime')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage overview realtime: ${response.status}`)
+  }
+  const payload = await response.json() as Partial<OverviewRealtimeBlock> & {
+    current_usage?: Partial<OverviewRealtimeBlock['current_usage']>;
+  }
+  return normalizeOverviewRealtimeBlock(payload, window)
+}
+
+export interface FetchUsageEventsOptions {
+  page?: number
+  pageSize?: number
+  cursorMode?: boolean
+  cursor?: string
+  model?: string
+  // Request Events 页面沿用 Source 命名；这里传的是 usage identity，后端会转换为 auth_index 查询。
+  source?: string
+  authType?: UsageIdentityAuthType
+  result?: string
+  apiKeyId?: string
+}
+
+export type UsageEventsExportFormat = 'csv' | 'json'
+
+export interface UsageEventsExportFile {
+  blob: Blob
+  filename: string
+}
+
+interface UsageEventRequestLogDownloadURLResponse {
+  download_url?: string
+}
+
+function buildUsageEventsParams(request: UsageRangeRequest | undefined, options?: FetchUsageEventsOptions, includePagination = true): URLSearchParams {
+  const params = request ? buildUsageRangeParams(request) : new URLSearchParams()
+  if (includePagination && typeof options?.page === 'number' && Number.isFinite(options.page) && options.page > 0) {
+    params.set('page', String(Math.floor(options.page)))
+  }
+  if (includePagination && typeof options?.pageSize === 'number' && Number.isFinite(options.pageSize) && options.pageSize > 0) {
+    params.set('page_size', String(Math.floor(options.pageSize)))
+  }
+  if (includePagination && options?.cursorMode) {
+    params.set('cursor_mode', 'true')
+  }
+  const cursor = options?.cursor?.trim()
+  if (includePagination && cursor) {
+    params.set('cursor', cursor)
+  }
+  const model = options?.model?.trim()
+  if (model) {
+    params.set('model', model)
+  }
+  const source = options?.source?.trim()
+  if (source) {
+    // Source 下拉的 value 不是 usage_events.source 原始字段，而是后端用于 auth_index 查询的 identity。
+    params.set('source', source)
+  }
+  if (options?.authType === 1 || options?.authType === 2) {
+    params.set('auth_type', String(options.authType))
+  }
+  const result = options?.result?.trim()
+  if (result) {
+    params.set('result', result)
+  }
+  const selectedAPIKeyId = options?.apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  return params
+}
+
+function parseAttachmentFilename(contentDisposition: string | null, fallback: string): string {
+  const match = contentDisposition?.match(/filename="([^"]+)"/i)
+  return match?.[1]?.trim() || fallback
+}
+
+export async function fetchUsageEventModelFilterOptions(signal?: AbortSignal): Promise<UsageEventModelFilterOptionsResponse> {
+  const response = await apiFetch(apiPath('/usage/events/filters/models'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage event model filters: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageEventSourceFilterOptions(signal?: AbortSignal): Promise<UsageEventSourceFilterOptionsResponse> {
+  const response = await apiFetch(apiPath('/usage/events/filters/sources'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage event source filters: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageEvents(request: UsageRangeRequest | undefined, signal?: AbortSignal, options?: FetchUsageEventsOptions): Promise<UsageEventsResponse> {
+  const params = buildUsageEventsParams(request, options)
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/events')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage events: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchErrorEvents(identityId: string, signal?: AbortSignal, cursor?: string, pageSize = 50): Promise<ErrorEventsResponse> {
+  const params = new URLSearchParams()
+  params.set('page_size', String(pageSize))
+  const normalizedCursor = cursor?.trim()
+  if (normalizedCursor) params.set('cursor', normalizedCursor)
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath(`/usage/identities/${encodeURIComponent(identityId)}/errors`)}?${query}`, { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load CPA error events: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageEventRequestLog(eventId: string, signal?: AbortSignal): Promise<UsageEventRequestLogResponse> {
+  const response = await apiFetch(apiPath(`/usage/events/${encodeURIComponent(eventId)}/request-log`), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage event request log: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function createUsageEventRequestLogDownloadURL(eventId: string): Promise<string> {
+  const response = await apiFetch(apiPath(`/usage/events/${encodeURIComponent(eventId)}/request-log/download-token`), { method: 'POST', cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to create usage event request log download URL: ${response.status}`)
+  }
+  const payload = await response.json() as UsageEventRequestLogDownloadURLResponse
+  const downloadURL = payload.download_url?.trim()
+  if (!downloadURL) {
+    throw new ApiError('request log download URL is missing', response.status)
+  }
+  return downloadURL
+}
+
+export async function exportUsageEvents(request: UsageRangeRequest, format: UsageEventsExportFormat, options?: FetchUsageEventsOptions): Promise<UsageEventsExportFile> {
+  const params = buildUsageEventsParams(request, options, false)
+  params.set('format', format)
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/events/export')}${query ? `?${query}` : ''}`)
+  if (!response.ok) {
+    await parseApiError(response, `Failed to export usage events: ${response.status}`)
+  }
+  return {
+    blob: await response.blob(),
+    filename: parseAttachmentFilename(response.headers.get('Content-Disposition'), `usage-events.${format}`),
+  }
+}
+
+export const USAGE_IDENTITY_PAGE_SORTS = ['priority', 'total_requests', 'total_tokens', 'last_used_at'] as const
+export type UsageIdentityPageSort = typeof USAGE_IDENTITY_PAGE_SORTS[number]
+
+export interface FetchUsageIdentitiesPageOptions {
+  authType?: UsageIdentityAuthType
+  activeOnly?: boolean
+  types?: string[]
+  sort?: UsageIdentityPageSort
+  page?: number
+  pageSize?: number
+}
+
+export async function fetchUsageIdentities(signal?: AbortSignal): Promise<UsageIdentitiesResponse> {
+  const response = await apiFetch(apiPath('/usage/identities'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage identities: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageIdentity(id: string, signal?: AbortSignal): Promise<UsageIdentity> {
+  const response = await apiFetch(apiPath(`/usage/identities/${encodeURIComponent(id)}`), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage identity: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageIdentitiesPage(signal?: AbortSignal, options?: FetchUsageIdentitiesPageOptions): Promise<UsageIdentitiesPageResponse> {
+  // Credentials 两个分区共用分页接口，通过 auth_type 控制服务端过滤。
+  const params = new URLSearchParams()
+  if (options?.authType) {
+    params.set('auth_type', String(options.authType))
+  }
+  if (typeof options?.activeOnly === 'boolean') {
+    params.set('active_only', String(options.activeOnly))
+  }
+  if (options?.sort) {
+    params.set('sort', options.sort)
+  }
+  for (const type of options?.types ?? []) {
+    if (type !== '') {
+      params.append('type', type)
+    }
+  }
+  if (typeof options?.page === 'number' && Number.isFinite(options.page) && options.page > 0) {
+    params.set('page', String(Math.floor(options.page)))
+  }
+  if (typeof options?.pageSize === 'number' && Number.isFinite(options.pageSize) && options.pageSize > 0) {
+    params.set('page_size', String(Math.floor(options.pageSize)))
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/identities/page')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage identities page: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function updateUsageIdentityAlias(id: string, alias: string | null): Promise<UsageIdentity> {
+  const response = await apiFetch(apiPath(`/usage/identities/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ alias }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update usage identity alias: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function resetUsageIdentityStats(id: string): Promise<UsageIdentity> {
+  const response = await apiFetch(apiPath(`/usage/identities/${encodeURIComponent(id)}/stats/reset`), { method: 'POST' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to reset usage identity stats: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageQuotaCache(authIndexes: string[], signal?: AbortSignal): Promise<UsageQuotaCacheResponse> {
+  // cache 只读后端已有结果，不携带刷新 limit，避免把缓存读取误当队列提交。
+  const response = await apiFetch(apiPath('/quota/cache'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ auth_indexes: authIndexes }),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load cached usage quotas: ${response.status}`)
+  }
+  return response.json()
+}
+
+export interface FetchCodexQuotaHistoryOptions {
+  windowRole?: 'primary' | 'secondary'
+}
+
+export async function fetchCodexQuotaHistory(
+  authIndex: string,
+  options: FetchCodexQuotaHistoryOptions = {},
+  signal?: AbortSignal,
+): Promise<CodexQuotaHistoryResponse> {
+  const params = new URLSearchParams()
+  if (options.windowRole) params.set('window_role', options.windowRole)
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath(`/quota/history/${encodeURIComponent(authIndex)}`)}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load quota history: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function deleteCodexQuotaHistoryCycle(authIndex: string, cycleId: number, signal?: AbortSignal): Promise<void> {
+  const response = await apiFetch(apiPath(`/quota/history/${encodeURIComponent(authIndex)}/cycles/${cycleId}`), {
+    method: 'DELETE', signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to delete quota cycle: ${response.status}`)
+  }
+}
+
+export async function refreshUsageQuotas(authIndexes: string[], signal?: AbortSignal): Promise<UsageQuotaRefreshResponse> {
+  // refresh 会创建后台任务，前端提交当前页所有 auth_index。
+  const response = await apiFetch(apiPath('/quota/refresh'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ auth_indexes: authIndexes }),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to refresh usage quotas: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageQuotaInspectionStatus(signal?: AbortSignal): Promise<UsageQuotaInspectionStatusResponse> {
+  const response = await apiFetch(apiPath('/quota/inspection'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load quota inspection status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function startUsageQuotaInspection(signal?: AbortSignal): Promise<UsageQuotaInspectionStatusResponse> {
+  const response = await apiFetch(apiPath('/quota/inspection'), {
+    method: 'POST',
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to start quota inspection: ${response.status}`)
+  }
+  return response.json()
+}
+
+
+export async function resetUsageQuota(authIndex: string, signal?: AbortSignal, grantId?: string, organizationId?: string): Promise<UsageQuotaResetResponse> {
+  const response = await apiFetch(apiPath('/quota/reset'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ auth_index: authIndex, ...(grantId ? { grant_id: grantId, organization_id: organizationId } : {}) }),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to reset usage quota: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageQuotaResetCredits(authIndex: string, signal?: AbortSignal): Promise<UsageQuotaResetCreditsResponse> {
+  const response = await apiFetch(apiPath(`/quota/reset-credits/${encodeURIComponent(authIndex)}`), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load quota reset credits: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchClaudeResetGrants(authIndex: string, signal?: AbortSignal): Promise<import('./types').ClaudeResetGrantsResponse> {
+  const response = await apiFetch(apiPath(`/quota/claude-reset-grants/${encodeURIComponent(authIndex)}`), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load Claude reset grants: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUsageQuotaRefreshTask(authIndex: string, signal?: AbortSignal): Promise<UsageQuotaRefreshTaskResponse> {
+  const response = await apiFetch(apiPath(`/quota/refresh/${encodeURIComponent(authIndex)}`), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage quota refresh task: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function setCredentialsDisabled(names: string[], disabled: boolean): Promise<CredentialsManagementResponse> {
+  const response = await apiFetch(apiPath('/credentials/status'), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ names, disabled }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update credential status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export type CredentialStatusKind = 'credential' | 'ai-provider'
+
+export interface CredentialStatusResponse {
+  auth_index: string
+  disabled: boolean
+}
+
+// 凭证与 AI 供应商共用前端调用形状，由后端按 auth_index 翻译成各自的上游写操作。
+const credentialStatusPathByKind: Record<CredentialStatusKind, string> = {
+  'credential': '/credentials',
+  'ai-provider': '/ai-providers',
+}
+
+export async function setCredentialDisabled(kind: CredentialStatusKind, authIndex: string, disabled: boolean): Promise<CredentialStatusResponse> {
+  const response = await apiFetch(apiPath(`${credentialStatusPathByKind[kind]}/${encodeURIComponent(authIndex)}/status`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ disabled }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update credential status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export interface CredentialPriorityResponse {
+  auth_index: string
+  priority: number
+}
+
+export async function setCredentialPriority(kind: CredentialStatusKind, authIndex: string, priority: number): Promise<CredentialPriorityResponse> {
+  const response = await apiFetch(apiPath(`${credentialStatusPathByKind[kind]}/${encodeURIComponent(authIndex)}/priority`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ priority }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update credential priority: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function deleteCredentials(names: string[]): Promise<CredentialsManagementResponse> {
+  const response = await apiFetch(apiPath('/credentials'), {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ names }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to delete credentials: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchAnalysis(request: UsageRangeRequest, signal?: AbortSignal, apiKeyId?: string): Promise<AnalysisResponse> {
+  const params = buildUsageRangeParams(request)
+  const selectedAPIKeyId = apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/analysis')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load analysis: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchAnalysisLatency(request: UsageRangeRequest, signal?: AbortSignal, apiKeyId?: string): Promise<AnalysisLatencyDiagnostics> {
+  const params = buildUsageRangeParams(request)
+  const selectedAPIKeyId = apiKeyId?.trim()
+  if (selectedAPIKeyId) {
+    applyUsageScope(params, selectedAPIKeyId)
+  }
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/analysis/latency')}${query ? `?${query}` : ''}`, { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load analysis latency: ${response.status}`)
+  }
+  return response.json()
+}
+
+export type CpaApiKeyOptionsRequest =
+  | { scope: 'overview' | 'analysis' | 'request-events'; range: UsageRangeRequest }
+  | { scope: 'realtime'; window: OverviewRealtimeWindow }
+
+export async function fetchCpaApiKeyOptions(signal?: AbortSignal, request?: CpaApiKeyOptionsRequest): Promise<CpaApiKeyOptionsResponse> {
+  const params = request && request.scope !== 'realtime' ? buildUsageRangeParams(request.range) : new URLSearchParams()
+  if (request) params.set('scope', request.scope)
+  if (request?.scope === 'realtime') params.set('window', request.window)
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath('/usage/api-keys/options')}${query ? `?${query}` : ''}`, { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load CPA API key options: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchCpaApiKeys(signal?: AbortSignal): Promise<CpaApiKeysResponse> {
+  const response = await apiFetch(apiPath('/usage/api-keys'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load CPA API keys: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchCpaApiKeySettings(signal?: AbortSignal): Promise<CpaApiKeySettingsResponse> {
+  const response = await apiFetch(apiPath('/usage/api-keys/settings'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load CPA API key settings: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function updateCpaApiKeyAlias(id: string, keyAlias: string): Promise<CpaApiKeyDisplayItem> {
+  const response = await apiFetch(apiPath(`/usage/api-keys/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ keyAlias }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update CPA API key alias: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchStatus(signal?: AbortSignal): Promise<StatusResponse> {
+  const response = await apiFetch(apiPath('/status'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchVersion(signal?: AbortSignal): Promise<VersionResponse> {
+  const response = await apiFetch(apiPath('/version'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load version: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchQuotaAutoRefreshSettings(signal?: AbortSignal): Promise<QuotaAutoRefreshSettings> {
+  const response = await apiFetch(apiPath('/quota/auto-refresh/settings'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load quota auto refresh settings: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function updateQuotaAutoRefreshSettings(settings: QuotaAutoRefreshSettings): Promise<QuotaAutoRefreshSettings> {
+  const response = await apiFetch(apiPath('/quota/auto-refresh/settings'), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(settings),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update quota auto refresh settings: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchUpdateCheck(signal?: AbortSignal): Promise<UpdateCheckResponse> {
+  const response = await apiFetch(apiPath('/update/check'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to check for updates: ${response.status}`)
+  }
+  return response.json()
+}
+
+export interface AvailableModel {
+  id: string
+  owned_by?: string
+  object?: string
+  created?: number
+}
+
+// 当前 CPA 目录与价格编辑器的历史模型候选分开读取。
+export async function fetchAvailableModels(signal?: AbortSignal): Promise<{ object: string; data: AvailableModel[] }> {
+  const response = await apiFetch(apiPath('/models'), { signal, cache: 'no-store' })
+  if (!response.ok) await parseApiError(response, `Failed to load available models: ${response.status}`)
+  return response.json()
+}
+
+// 列表同时返回完整配置与已保存修订，供编辑和重算确认使用。
+export async function fetchPricingModels(signal?: AbortSignal): Promise<PricingModelsResponse> {
+  const response = await apiFetch(apiPath('/pricing/models'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load pricing models: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 候选模型沿用服务端的完整标识来源与去重结果。
+export async function fetchPricingModelOptions(signal?: AbortSignal): Promise<PricingModelOptionsResponse> {
+  const response = await apiFetch(apiPath('/pricing/model-options'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load pricing model options: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 一次保存完整配置；空倍率和分支数组表示清空，历史已存费用保持原值。
+export async function savePricingModel(config: ModelPricingConfig, signal?: AbortSignal): Promise<SavePricingModelResponse> {
+  const response = await apiFetch(apiPath('/pricing/models'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to save pricing model: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 仅删除当前配置；模型名放在查询参数中，包含斜杠时仍可准确传递。
+export async function deletePricingModel(model: string, signal?: AbortSignal): Promise<DeletePricingModelResponse> {
+  const params = new URLSearchParams({ model })
+  const response = await apiFetch(`${apiPath('/pricing/models')}?${params.toString()}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to delete pricing model: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 重算弹框读取部署时区、合法小时边界及本次需要确认的配置修订。
+export async function fetchPricingRecalculationOptions(signal?: AbortSignal): Promise<PricingRecalculationOptions> {
+  const response = await apiFetch(apiPath('/pricing/recalculations/options'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load pricing recalculation options: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 启动只提交用户确认的起点与修订；运行中服务端会返回现有任务而不另行排队。
+export async function startPricingRecalculation(request: StartPricingRecalculationRequest, signal?: AbortSignal): Promise<StartPricingRecalculationResponse> {
+  const response = await apiFetch(apiPath('/pricing/recalculations'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to start pricing recalculation: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 当前任务是唯一进度入口；进程重启或从未启动时返回 null。
+export async function fetchCurrentPricingRecalculation(signal?: AbortSignal): Promise<PricingRecalculationTask | null> {
+  const response = await apiFetch(apiPath('/pricing/recalculations/current'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load current pricing recalculation: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 仅在用户明确拉取时请求选定来源；响应包含来源 ID、匹配提供商显示名和四项候选基础价。
+export async function fetchPricingSync(source: PricingSyncSource, signal?: AbortSignal): Promise<PricingSyncFetchResponse> {
+  const params = new URLSearchParams({ source })
+  const response = await apiFetch(`${apiPath('/pricing/sync/fetch')}?${params.toString()}`, { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to fetch pricing sync: ${response.status}`)
+  }
+  return response.json()
+}
+
+// 整批应用所选基础价；请求不带倍率或分支，避免覆盖已有完整配置。
+export async function applyPricingSync(request: PricingSyncApplyRequest, signal?: AbortSignal): Promise<PricingSyncApplyResponse> {
+  const response = await apiFetch(apiPath('/pricing/sync/apply'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to apply pricing sync: ${response.status}`)
+  }
+  return response.json()
+}

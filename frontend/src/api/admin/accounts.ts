@@ -888,6 +888,7 @@ export async function setPrivacy(id: number): Promise<Account> {
  * OpenAI / Codex rate-limit reset feature: query and reset upstream usage.
  */
 export interface OpenAIRateLimitWindow {
+  utilization_unknown?: boolean
   used_percent: number
   limit_window_seconds: number
   reset_after_seconds: number
@@ -916,7 +917,13 @@ export interface OpenAIRateLimitResetCredits {
   credits?: OpenAIRateLimitResetCreditDetail[]
 }
 
+export interface OpenAIQuotaObservation extends OpenAIRateLimitWindow {
+  sampled_at: number
+  source: 'response_headers' | 'websocket'
+}
+
 export interface OpenAIQuotaUsage {
+  observed_windows?: OpenAIQuotaObservation[]
   user_id?: string
   account_id?: string
   email?: string
@@ -962,6 +969,12 @@ export interface OpenAIQuotaResetResult {
 export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
   cache_persisted: boolean
   credits_cache_persisted?: boolean
+}
+
+/** Read live quota without a synthetic inference request or a quota reset. */
+export async function queryOpenAIQuota(id: number): Promise<OpenAIQuotaUsage> {
+  const { data } = await apiClient.get<OpenAIQuotaUsage>(`/admin/openai/accounts/${id}/quota`)
+  return data
 }
 
 /**
@@ -1184,6 +1197,7 @@ export const accountsAPI = {
   setPrivacy,
   revertProxyFallback,
   refreshOpenAIQuota,
+  queryOpenAIQuota,
   resetOpenAIQuota,
   createSparkShadow,
   getUpstreamBillingProbeSettings,

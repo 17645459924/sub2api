@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -13,10 +14,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-const defaultClaudeUsageURL = "https://api.anthropic.com/api/oauth/usage"
+const defaultClaudeUsageURL = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"
 
 // 默认 User-Agent，与用户抓包的请求一致
-const defaultUsageUserAgent = "claude-code/2.1.7"
+const defaultUsageUserAgent = "claude-cli/2.1.280 (external, cli)"
 
 type claudeUsageService struct {
 	usageURL          string
@@ -95,6 +96,17 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		var failure struct {
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if resp.StatusCode == http.StatusForbidden && json.Unmarshal(body, &failure) == nil &&
+			failure.Error.Type == "permission_error" && strings.Contains(failure.Error.Message, "scope requirement user:profile") {
+			return nil, infraerrors.New(http.StatusForbidden, "CLAUDE_USAGE_PROFILE_SCOPE_REQUIRED",
+				"This token lacks user:profile permission for live quota queries. Reauthorize the account with OAuth, or use measurements from real inference responses.")
+		}
 		msg := fmt.Sprintf("API returned status %d: %s", resp.StatusCode, string(body))
 		return nil, infraerrors.New(http.StatusInternalServerError, "UPSTREAM_ERROR", msg)
 	}
