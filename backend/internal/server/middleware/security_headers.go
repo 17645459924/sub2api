@@ -128,8 +128,14 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		if isShowcasePath(c) {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+			c.Header("Content-Security-Policy", showcaseCSPPolicy)
+			c.Next()
+			return
+		}
+		c.Header("X-Frame-Options", "DENY")
 		if isAPIRoutePath(c) {
 			c.Next()
 			return
@@ -149,6 +155,18 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		}
 		c.Next()
 	}
+}
+
+// showcaseCSPPolicy 用于首页内嵌的静态演示页（/showcase/*.html）。
+// 这些页面是自包含的内联脚本，只允许被同源首页以沙箱 iframe 嵌入，且禁止任何外联请求。
+const showcaseCSPPolicy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
+func isShowcasePath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := c.Request.URL.Path
+	return strings.HasPrefix(path, "/showcase/") && strings.HasSuffix(path, ".html")
 }
 
 func isAPIRoutePath(c *gin.Context) bool {

@@ -97,6 +97,35 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
 	})
 
+	t.Run("showcase_pages_can_be_framed_by_same_origin_only", func(t *testing.T) {
+		middleware := SecurityHeaders(config.CSPConfig{Enabled: true}, nil)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/showcase/gpt-nebula.html", nil)
+
+		middleware(c)
+
+		assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+		csp := w.Header().Get("Content-Security-Policy")
+		assert.Contains(t, csp, "frame-ancestors 'self'")
+		assert.Contains(t, csp, "script-src 'unsafe-inline'")
+		assert.Contains(t, csp, "connect-src 'none'")
+	})
+
+	t.Run("non_showcase_pages_stay_unframeable", func(t *testing.T) {
+		middleware := SecurityHeaders(config.CSPConfig{Enabled: true}, nil)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/showcase/city.jpg", nil)
+
+		middleware(c)
+
+		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+		assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	})
+
 	t.Run("csp_disabled_no_csp_header", func(t *testing.T) {
 		cfg := config.CSPConfig{Enabled: false}
 		middleware := SecurityHeaders(cfg, nil)
