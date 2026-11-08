@@ -2579,3 +2579,15 @@
 .model-strip { color: #c9deee; border-color: #ffffff1a; }
 .model-strip * { color: inherit; }
 .model-strip small { color: #96b0c4; }
+
+/* per-model colour identity */
+.uni-chip .uni-icon,
+.uni-chip:not(.supported) .uni-icon,
+.uni-chip:not(.supported) .uni-icon.uni-icon {
+  color: var(--tone);
+  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--tone) 38%, #0b1222), color-mix(in srgb, var(--tone) 12%, #060a14) 75%);
+  border: 1px solid color-mix(in srgb, var(--tone) 75%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--tone) 60%, transparent), 0 0 64px color-mix(in srgb, var(--tone) 30%, transparent);
+}
+.uni-chip .uni-name { text-shadow: 0 0 12px color-mix(in srgb, var(--tone) 60%, transparent); }
+.uni-chip:not(.supported) .uni-name { color: color-mix(in srgb, var(--tone) 55%, #d6dcec); }
