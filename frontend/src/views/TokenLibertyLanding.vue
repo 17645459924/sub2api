@@ -152,6 +152,7 @@
             <i aria-hidden="true"></i>
             <b>{{ n.year }}</b>
             <span>{{ n.text }}</span>
+            <em v-if="n.note">{{ n.note }}</em>
           </li>
         </ol>
         <p class="sr-only">{{ c.universeSr }}</p>
@@ -866,19 +867,19 @@ function closeImageOnBackdrop(event: MouseEvent) {
 }
 const timeline = computed(() => {
   const zh = isZh.value
-  const rows: [string, string, string][] = [
-    ['2017', 'Transformer 架构提出', 'Transformer architecture'],
-    ['2018', 'GPT-1 与 BERT 发布', 'GPT-1 and BERT released'],
-    ['2020', 'GPT-3 发布', 'GPT-3 released'],
-    ['2022', 'ChatGPT 发布', 'ChatGPT launched'],
-    ['2023', 'GPT-4 与 Claude 发布', 'GPT-4 and Claude released'],
-    ['2024', 'Claude 3 系列发布', 'Claude 3 family released'],
-    ['2025', 'DeepSeek-R1 开源', 'DeepSeek-R1 open-sourced'],
-    ['2026', 'Claude Sonnet 4.6 发布', 'Claude Sonnet 4.6 released'],
+  const rows: [string, string, string, string, string][] = [
+    ['2017', 'Transformer 架构提出', 'Transformer architecture', '', ''],
+    ['2018', 'GPT-1 与 BERT 发布', 'GPT-1 and BERT released', '', ''],
+    ['2020', 'GPT-3 发布', 'GPT-3 released', '', ''],
+    ['2022', 'ChatGPT 发布', 'ChatGPT launched', '', ''],
+    ['2023', 'GPT-4 与 Claude 发布', 'GPT-4 and Claude released', '', ''],
+    ['2024', 'Claude 3 系列发布', 'Claude 3 family released', 'Opus / Sonnet / Haiku 三档模型同期推出', 'Opus, Sonnet and Haiku tiers launched together'],
+    ['2025', 'DeepSeek-R1 开源', 'DeepSeek-R1 open-sourced', '推理模型走向开源', 'Reasoning models go open-source'],
+    ['2026', 'Claude Sonnet 4.6 发布', 'Claude Sonnet 4.6 released', '主流模型保持月度级迭代', 'Leading models keep iterating monthly'],
   ]
-  return rows.map(([year, a, b], i) => {
+  return rows.map(([year, a, b, na, nb], i) => {
     const dx = (i - 3.5) * 12
-    return { year, text: zh ? a : b, dx, drop: Math.round((i - 3.5) * (i - 3.5) * 2.6) }
+    return { year, text: zh ? a : b, note: zh ? na : nb, dx, drop: Math.round((i - 3.5) * (i - 3.5) * 2.6) }
   })
 })
 const universeRings = computed(() => {

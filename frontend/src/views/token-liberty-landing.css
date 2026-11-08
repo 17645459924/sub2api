@@ -2998,3 +2998,13 @@
   background: radial-gradient(ellipse closest-side, #040a1a8c 0%, #040a1a66 45%, #040a1a22 75%, transparent 100%);
 }
 @media (max-width: 960px) { .globe-universe .universe-core::before { display: block; inset: -20px -20px; } }
+
+/* timeline v3: higher, with notes for recent years */
+.liberty .universe { padding-bottom: 200px; }
+.universe-timeline { height: 190px; }
+.universe-timeline::before { top: 28px; }
+.universe-timeline li { top: calc(24px + var(--drop) * 1px); }
+.universe-timeline li em {
+  font-style: normal; margin-top: 4px; font-size: clamp(11px, .75vw, 14px); line-height: 1.45; color: #7fa6c8; max-width: 11vw; min-width: 96px;
+}
+@media (max-width: 960px) { .universe-timeline li em { display: none; } }
