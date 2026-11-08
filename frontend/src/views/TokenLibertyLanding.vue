@@ -829,32 +829,27 @@ function closeImageOnBackdrop(event: MouseEvent) {
     imageDialog.value.close()
 }
 const universeRings = computed(() => {
+  const mk = (id: string, platform: string, label: string, tone: string, supported: boolean) => ({ id, platform, label, tone, supported })
   const defs = [
-    {
-      id: 'inner',
-      full: 20,
-      dir: 1,
-      items: [
-        { id: 'opus', platform: 'anthropic', label: 'Claude Opus', tone: '#ff9a6c', supported: true },
-        { id: 'astra', platform: 'openai', label: 'Codex Astra', tone: '#8ff0d4', supported: true },
-        { id: 'sonnet', platform: 'anthropic', label: 'Claude Sonnet', tone: '#ffb48a', supported: true },
-        { id: 'sol', platform: 'openai', label: 'Codex Sol', tone: '#9fd0ff', supported: true },
-        { id: 'fabble', platform: 'anthropic', label: 'Claude Fabble', tone: '#ffc9a8', supported: true },
-        { id: 'gpt-image', platform: 'openai', label: c.value.orbitImage, tone: '#c4a8ff', supported: true },
-      ],
-    },
+    { id: 'inner', full: 20, dir: 1, items: [] as ReturnType<typeof mk>[] },
     {
       id: 'outer',
-      full: 34,
+      full: 36,
       dir: -1,
       items: [
-        ['gemini', 'Gemini', '#78a9ff'],
-        ['deepseek', 'DeepSeek', '#7b93ff'],
-        ['kimi', 'Kimi', '#7fd6ff'],
-        ['zhipu', 'GLM', '#9aa6ff'],
-        ['grok', 'Grok', '#e4e4f0'],
-        ['minimax', 'MiniMax', '#ff8a9a'],
-      ].map(([id, label, tone]) => ({ id, platform: id, label, tone, supported: false })),
+        mk('opus', 'anthropic', 'Claude Opus', '#ff9a6c', true),
+        mk('gemini', 'gemini', 'Gemini', '#78a9ff', false),
+        mk('astra', 'openai', 'Codex Astra', '#8ff0d4', true),
+        mk('deepseek', 'deepseek', 'DeepSeek', '#7b93ff', false),
+        mk('sonnet', 'anthropic', 'Claude Sonnet', '#ffb48a', true),
+        mk('kimi', 'kimi', 'Kimi', '#7fd6ff', false),
+        mk('sol', 'openai', 'Codex Sol', '#9fd0ff', true),
+        mk('zhipu', 'zhipu', 'GLM', '#9aa6ff', false),
+        mk('fabble', 'anthropic', 'Claude Fabble', '#ffc9a8', true),
+        mk('grok', 'grok', 'Grok', '#e4e4f0', false),
+        mk('gpt-image', 'openai', c.value.orbitImage, '#c4a8ff', true),
+        mk('minimax', 'minimax', 'MiniMax', '#ff8a9a', false),
+      ],
     },
   ]
   return defs.map((ring) => ({

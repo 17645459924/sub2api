@@ -2500,3 +2500,51 @@
   .universe-ring, .uni-chip { top: 145px; }
   .universe-core h1 { font-size: clamp(34px, 10.5vw, 46px); }
 }
+
+/* hero v4: one wide ring, evenly spaced glowing tiles (reference) */
+.universe-ring.ring-inner { border-color: #8f7bff40; }
+.universe-ring.ring-outer { border-style: solid; border-color: #9a86ff66; box-shadow: 0 0 40px #6d5bff22 inset; }
+.universe-stage { --a-outer: 620px; --b-outer: 262px; --a-inner: 540px; --b-inner: 222px; }
+.uni-chip:not(.supported) .uni-icon,
+.uni-chip:not(.supported) .uni-icon.uni-icon {
+  width: 58px; height: 58px; opacity: 1;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--tone) 50%, transparent), 0 0 50px #6d5bff33;
+}
+.uni-chip:not(.supported) .uni-icon svg { width: 26px; height: 26px; }
+.uni-chip.supported .uni-icon { width: 74px; height: 74px; }
+.uni-chip.supported .uni-icon svg { width: 36px; height: 36px; }
+@media (max-width: 1280px) {
+  .universe-stage { --a-outer: 500px; --b-outer: 262px; --a-inner: 430px; --b-inner: 222px; }
+}
+@media (max-width: 960px) {
+  .universe-stage { --a-outer: min(330px, 40vw); --b-outer: 128px; --a-inner: min(250px, 34vw); --b-inner: 92px; }
+}
+@media (max-width: 760px) {
+  .uni-chip.supported .uni-icon { width: 50px; height: 50px; }
+  .uni-chip.supported .uni-icon svg { width: 24px; height: 24px; }
+  .uni-chip:not(.supported) .uni-icon { width: 38px; height: 38px; }
+  .uni-chip:not(.supported) .uni-name { display: none; }
+}
+
+.ring-outer .uni-x, .ring-outer .uni-y { animation-duration: 18s; }
+
+
+@media (max-width: 960px) {
+  .universe-stage { --b-outer: 150px; --b-inner: 110px; padding-top: 350px; }
+  .universe-ring, .uni-chip { top: 178px; }
+}
+@media (max-width: 760px) {
+  .universe-stage { padding-top: 345px; }
+  .universe-ring, .uni-chip { top: 175px; }
+  .uni-chip.supported .uni-icon { width: 46px; height: 46px; }
+  .uni-chip:not(.supported) .uni-icon { width: 34px; height: 34px; }
+  .uni-chip .uni-name { font-size: 11px; }
+}
+
+@media (max-width: 760px) {
+  .uni-chip:not(.supported) .uni-icon,
+  .uni-chip:not(.supported) .uni-icon.uni-icon { width: 36px; height: 36px; }
+  .uni-chip:not(.supported) .uni-icon svg { width: 17px; height: 17px; }
+  .uni-chip.supported .uni-icon svg { width: 22px; height: 22px; }
+  .universe-stage { padding-top: 370px; }
+}
