@@ -122,8 +122,8 @@ onMounted(async () => {
           vec3 n = normalize(vN);
           float ndl = dot(n, lightDir);
           float day = smoothstep(-.12, .3, ndl);
-          vec3 d = texture2D(dayMap, vUv).rgb;
-          vec3 lit = d * (.2 + 1.3 * max(ndl, 0.0));
+          vec3 d = pow(texture2D(dayMap, vUv).rgb, vec3(.72)); d = d * 1.25 + vec3(.02, .06, .14);
+          vec3 lit = d * (.42 + 1.1 * max(ndl, 0.0));
           vec3 night = texture2D(nightMap, vUv).rgb * vec3(1.5, 1.2, .75);
           vec3 col = mix(night * 1.1 + d * vec3(.015, .03, .07), lit, day);
           float twilight = smoothstep(-.1, .0, ndl) * (1.0 - smoothstep(.0, .2, ndl));
