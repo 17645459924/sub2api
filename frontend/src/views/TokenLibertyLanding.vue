@@ -836,10 +836,10 @@ const universeRings = computed(() => {
       dir: 1,
       items: [
         { id: 'opus', platform: 'anthropic', label: 'Claude Opus', tone: '#ff9a6c', supported: true },
-        { id: 'gpt', platform: 'openai', label: 'GPT', tone: '#8ff0d4', supported: true },
+        { id: 'astra', platform: 'openai', label: 'Codex Astra', tone: '#8ff0d4', supported: true },
         { id: 'sonnet', platform: 'anthropic', label: 'Claude Sonnet', tone: '#ffb48a', supported: true },
-        { id: 'codex', platform: 'openai', label: 'Codex', tone: '#9fd0ff', supported: true },
-        { id: 'haiku', platform: 'anthropic', label: 'Claude Haiku', tone: '#ffc9a8', supported: true },
+        { id: 'sol', platform: 'openai', label: 'Codex Sol', tone: '#9fd0ff', supported: true },
+        { id: 'fabble', platform: 'anthropic', label: 'Claude Fabble', tone: '#ffc9a8', supported: true },
         { id: 'gpt-image', platform: 'openai', label: c.value.orbitImage, tone: '#c4a8ff', supported: true },
       ],
     },
