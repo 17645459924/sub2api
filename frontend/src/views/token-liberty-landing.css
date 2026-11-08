@@ -2410,3 +2410,93 @@
 @media (max-width: 760px) {
   .universe-core .button { padding-inline: 18px; }
 }
+
+/* ---- hero v3: flat wide orbit like the reference; text stays inside ---- */
+.universe { padding: 93px 0 28px; }
+.universe-stage { --a-inner: 440px; --b-inner: 190px; --a-outer: 610px; --b-outer: 245px; height: 580px; }
+.universe-core { width: min(640px, 56%); padding: 14px 8px; }
+.universe-core h1 { font-size: clamp(34px, 4.1vw, 58px); letter-spacing: -2px; white-space: nowrap; }
+.universe-core h1 br { display: none; }
+.universe-core .hero-accent { margin-left: 0.2em; }
+.universe-core .hero-description { font-size: 14px; margin-top: 14px; }
+.universe-core .hero-actions { margin-top: 20px; }
+.universe-core .universe-tagline { margin-top: 16px; }
+.universe-core .announcement { margin-bottom: 16px; }
+.uni-chip:not(.supported) .uni-icon,
+.uni-chip:not(.supported) .uni-icon.uni-icon {
+  width: 48px;
+  height: 48px;
+  opacity: 0.85;
+  filter: none;
+  background: radial-gradient(circle at 35% 28%, #ffffff1f, #14102f 72%);
+  border-color: color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--tone) 40%, transparent);
+}
+.uni-chip:not(.supported) .uni-icon svg { width: 22px; height: 22px; }
+.uni-chip:not(.supported) .uni-name { color: #aaa3d6; opacity: 0.9; }
+.uni-chip.supported .uni-icon { width: 68px; height: 68px; }
+.uni-chip.supported .uni-icon svg { width: 32px; height: 32px; }
+@media (max-width: 1280px) {
+  .universe-stage { --a-inner: 360px; --b-inner: 190px; --a-outer: 500px; --b-outer: 245px; }
+  .universe-core { width: min(560px, 54%); }
+  .universe-core h1 { font-size: clamp(32px, 3.8vw, 46px); }
+}
+@media (max-width: 960px) {
+  .universe-stage { --a-inner: 230px; --b-inner: 280px; --a-outer: 290px; --b-outer: 335px; height: 800px; }
+  .universe-core { width: min(520px, 78%); }
+  .universe-core h1 { white-space: normal; font-size: clamp(36px, 7vw, 52px); }
+  .universe-core h1 br { display: inline; }
+  .universe-core .hero-accent { margin-left: 0; }
+}
+@media (max-width: 760px) {
+  .universe { padding-top: 80px; }
+  .universe-stage { --a-inner: 130px; --b-inner: 285px; --a-outer: 148px; --b-outer: 345px; height: 800px; }
+  .universe-core { width: 88%; }
+  .universe-core h1 { font-size: clamp(36px, 11vw, 48px); }
+  .uni-chip.supported .uni-icon { width: 54px; height: 54px; }
+  .uni-chip.supported .uni-icon svg { width: 26px; height: 26px; }
+  .uni-chip:not(.supported) .uni-icon { width: 38px; height: 38px; }
+  .uni-chip:not(.supported) .uni-name { display: none; }
+}
+
+.universe { padding-top: 100px; }
+.universe-stage { --b-inner: 218px; --b-outer: 268px; height: 620px; }
+@media (max-width: 1280px) {
+  .universe-stage { --b-inner: 218px; --b-outer: 268px; }
+}
+@media (max-width: 960px) {
+  .universe-stage { --b-inner: 280px; --b-outer: 335px; height: 800px; }
+}
+@media (max-width: 760px) {
+  .universe { padding-top: 80px; }
+  .universe-stage { --b-inner: 285px; --b-outer: 345px; height: 800px; }
+}
+
+@media (max-width: 960px) {
+  .universe { padding-top: 84px; }
+  .universe-stage {
+    --a-inner: min(230px, 36vw);
+    --b-inner: 78px;
+    --a-outer: min(330px, 40vw);
+    --b-outer: 128px;
+    height: auto;
+    padding-top: 300px;
+  }
+  .universe-ring, .uni-chip { top: 150px; }
+  .universe-core {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+    padding: 0 8px;
+    background: none;
+  }
+}
+@media (max-width: 760px) {
+  .universe-stage { padding-top: 290px; }
+  .universe-ring, .uni-chip { top: 145px; }
+  .universe-core h1 { font-size: clamp(34px, 10.5vw, 46px); }
+}

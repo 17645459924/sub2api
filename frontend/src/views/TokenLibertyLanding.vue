@@ -832,7 +832,7 @@ const universeRings = computed(() => {
   const defs = [
     {
       id: 'inner',
-      full: 24,
+      full: 20,
       dir: 1,
       items: [
         { id: 'opus', platform: 'anthropic', label: 'Claude Opus', tone: '#ff9a6c', supported: true },
@@ -845,16 +845,16 @@ const universeRings = computed(() => {
     },
     {
       id: 'outer',
-      full: 40,
+      full: 34,
       dir: -1,
       items: [
-        ['gemini', 'Gemini'],
-        ['deepseek', 'DeepSeek'],
-        ['kimi', 'Kimi'],
-        ['zhipu', 'GLM'],
-        ['grok', 'Grok'],
-        ['minimax', 'MiniMax'],
-      ].map(([id, label]) => ({ id, platform: id, label, tone: '#9d97c8', supported: false })),
+        ['gemini', 'Gemini', '#78a9ff'],
+        ['deepseek', 'DeepSeek', '#7b93ff'],
+        ['kimi', 'Kimi', '#7fd6ff'],
+        ['zhipu', 'GLM', '#9aa6ff'],
+        ['grok', 'Grok', '#e4e4f0'],
+        ['minimax', 'MiniMax', '#ff8a9a'],
+      ].map(([id, label, tone]) => ({ id, platform: id, label, tone, supported: false })),
     },
   ]
   return defs.map((ring) => ({
