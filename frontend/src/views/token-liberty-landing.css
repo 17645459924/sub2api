@@ -2855,7 +2855,7 @@
   .universe-core h1 { line-height: 1.2; }
   .universe-core .hero-description { margin-top: 22px !important; font-size: 13px; gap: 5px; }
   .universe-core .hero-actions { margin-top: 24px; gap: 10px; }
-  .universe-core .hero-actions .button { min-width: 0; padding: 13px 20px; min-height: 48px; font-size: 13px !important; }
+  .universe-core .hero-actions .button { min-width: 0; padding: 13px 16px; min-height: 48px; font-size: 13px !important; }
   .universe-points { margin-top: 20px; gap: 9px 12px; }
   .universe-points li { font-size: 11px; }
   .universe-points li + li { padding-left: 12px; }
@@ -2905,3 +2905,30 @@
 @media (prefers-reduced-motion: reduce) { .universe-aurora i { animation: none !important; } }
 .universe-aurora i:nth-child(n) { left: 50%; top: 50%; right: auto; bottom: auto; }
 .universe-aurora i:nth-child(1) { background: repeating-conic-gradient(from 0deg, #6fc0ff26 0deg 1.2deg, transparent 1.2deg 9deg); }
+
+/* ---- v7: horizon of a new world (planet rim + light pillar) ---- */
+.universe-grid { display: none; }
+.universe:has(.uni-badge:hover) :is(.uni-x, .uni-y, .uni-chip, .uni-badge, .comet-dot) { animation-play-state: running; }
+.universe-aurora i:nth-child(n) { mix-blend-mode: normal; -webkit-mask-image: none; mask-image: none; }
+.universe-aurora i:nth-child(1) {
+  width: 230vw; height: 230vw; top: calc(86% + 115vw); translate: -50% -50%; animation: none;
+  background: radial-gradient(closest-side, #02060f 0, #030a18 96%, #0b2a50 99.2%, #bfeaff 100%);
+  box-shadow: 0 -2px 6px #dff6ff, 0 -10px 40px #6fc8ffcc, 0 -40px 140px #2f7bff88, 0 -90px 260px #1b4fd055;
+}
+.universe-aurora i:nth-child(2) {
+  width: 110vw; height: 28vw; top: 86%; translate: -50% -50%;
+  background: radial-gradient(closest-side, #9be4ff66 0, #3b8bff33 40%, transparent 100%);
+  animation: portal-breathe 6s ease-in-out infinite alternate;
+}
+.universe-aurora i:nth-child(3) {
+  width: 22vw; height: 78%; top: 86%; translate: -50% -100%; border-radius: 0; filter: blur(14px);
+  background: linear-gradient(to top, #bfeaffaa, #5bbbff33 45%, transparent);
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); animation: pillar 5s ease-in-out infinite alternate;
+}
+@keyframes pillar { from { opacity: .55; } to { opacity: 1; } }
+.liberty .universe { background: radial-gradient(ellipse at 50% 90%, #0b2b55 0, #07142a 40%, #050b16 80%); }
+.universe-aurora i:nth-child(3) {
+  width: 30vw; filter: blur(22px); clip-path: none; opacity: .8;
+  background: linear-gradient(to top, #bfeaff66, #5bbbff1a 40%, transparent 85%);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent); mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+}
