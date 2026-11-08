@@ -213,6 +213,12 @@ export default {
   "codeFooter": "Use your enabled model and API key",
   "codeToolSwitch": "Choose an example client",
   "orbitImage": "Image models",
+  "universeEyebrow": "FLAGSHIP LINEUP",
+  "universeTitle": "The most powerful models, together.",
+  "universeDesc": "Claude and GPT · Codex, today's flagship models, one gateway and one key.",
+  "universeOn": "Flagship models · Native capabilities · Ready to use",
+
+  "universeSr": "Claude and GPT · Codex (including image generation) are available on this site.",
   "curlHint": "A JSON response means your key and model are connected",
   "codeClaudeStep": "Install and set connection variables",
   "codeCodexStep": "Write the Codex config",

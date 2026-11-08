@@ -48,102 +48,72 @@
     </header>
 
     <main>
-      <section class="hero shell" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <a href="#playground" class="announcement"
-            ><span class="status-dot"></span>{{ c.announcement
-            }}<span aria-hidden="true">↗</span></a
-          >
-          <h1 id="hero-title">
-            {{ c.title1 }}<br /><span class="hero-accent"
-              >{{ c.title2
-              }}<svg
-                viewBox="0 0 360 17"
-                preserveAspectRatio="none"
-                aria-hidden="true"
+      <section class="universe" :class="{ paused }" aria-labelledby="hero-title">
+        <div class="universe-stars" aria-hidden="true"></div>
+        <div class="universe-stage shell">
+          <span
+            v-for="ring in universeRings"
+            :key="ring.id"
+            class="universe-ring"
+            :class="`ring-${ring.id}`"
+            aria-hidden="true"
+          ></span>
+          <div class="universe-core">
+            <a href="#playground" class="announcement"
+              ><span class="status-dot"></span>{{ c.announcement
+              }}<span aria-hidden="true">↗</span></a
+            >
+            <h1 id="hero-title">
+              {{ c.title1 }}<br /><span class="hero-accent"
+                >{{ c.title2
+                }}<svg
+                  viewBox="0 0 360 17"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12Q170 -4 357 8M25 16Q175 3 331 13" /></svg
+              ></span>
+            </h1>
+            <p class="hero-description">
+              {{ c.description1 }}<br class="desktop-break" />{{ c.description2 }}
+            </p>
+            <div class="hero-actions">
+              <router-link :to="startPath" class="button button-dark"
+                >{{ c.start }} <span aria-hidden="true">↗</span></router-link
               >
-                <path d="M3 12Q170 -4 357 8M25 16Q175 3 331 13" /></svg></span
-            ><span class="title-star" aria-hidden="true">✳</span>
-          </h1>
-          <p class="hero-description">
-            {{ c.description1 }}<br class="desktop-break" />{{ c.description2 }}
-          </p>
-          <div class="hero-actions">
-            <router-link :to="startPath" class="button button-dark"
-              >{{ c.start }} <span aria-hidden="true">↗</span></router-link
-            >
-            <a href="#playground" class="button button-text"
-              ><span class="play-icon" aria-hidden="true">▷</span
-              >{{ c.tryDemo }}</a
-            >
+              <a href="#playground" class="button button-text"
+                ><span class="play-icon" aria-hidden="true">▷</span
+                >{{ c.tryDemo }}</a
+              >
+            </div>
+            <p class="universe-tagline">{{ c.universeOn }}</p>
           </div>
-          <div class="hero-note">
-            <span class="mini-logos" aria-hidden="true"
-              ><i>✳</i><i>◎</i><i>✦</i></span
-            ><span>{{ c.heroNote }}</span>
-          </div>
-        </div>
-        <div class="hero-art">
-          <div class="art-grid" aria-hidden="true"></div>
-          <div class="art-coordinate coord-top">
-            {{ c.artCaption }}
-          </div>
-          <div class="orb-halo" aria-hidden="true"></div>
-          <ParticleSculpture
-            :mode="sculptureMode"
-            :paused="paused"
-            :label="c.sculptureLabel"
-          />
-          <div class="orbit-system" :class="{ paused }" aria-hidden="true">
-            <span class="orbit-ring orbit-ring-a"></span>
-            <span class="orbit-ring orbit-ring-b"></span>
+          <template v-for="ring in universeRings" :key="`items-${ring.id}`">
             <div
-              v-for="chip in orbitChips"
-              :key="chip.id"
-              class="orbit-chip"
-              :style="{ '--x-delay': chip.xDelay, '--y-delay': chip.yDelay }"
+              v-for="item in ring.items"
+              :key="item.id"
+              class="uni-chip"
+              :class="[`ring-${ring.id}`, { supported: item.supported }]"
+              :style="{ '--x-delay': item.xDelay, '--y-delay': item.yDelay }"
+              aria-hidden="true"
             >
-              <div class="orbit-x">
-                <div class="orbit-y">
-                  <div class="orbit-label">
-                    <span class="model-symbol" :class="`symbol-${chip.id}`">{{ chip.symbol }}</span>
-                    {{ chip.label }}
+              <div class="uni-x">
+                <div class="uni-y">
+                  <div class="uni-badge">
+                    <span class="uni-icon" :style="{ '--tone': item.tone }"
+                      ><PlatformIcon :platform="item.platform as GroupPlatform" size="lg"
+                    /></span>
+                    <span class="uni-name">{{ item.label }}</span>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="art-cross cross-one" aria-hidden="true">+</div>
-          <div class="art-cross cross-two" aria-hidden="true">+</div>
-          <div class="art-controls">
-            <span class="art-hint"
-              ><span class="live-dot"></span>{{ c.interactive }}</span
-            >
-            <div class="shape-switch" role="group" :aria-label="c.shapeLabel">
-              <button
-                v-for="(shape, i) in c.shapes"
-                :key="shape"
-                type="button"
-                :class="{ active: sculptureMode === i }"
-                :aria-pressed="sculptureMode === i"
-                @click="selectShape(i)"
-              >
-                {{ shape }}
-              </button>
-            </div>
-          </div>
-          <div class="floating-response" aria-hidden="true">
-            <span class="response-icon">↳</span>
-            <div>
-              <span>{{ c.responseLabel }}</span
-              ><strong>{{ c.responseText }}<i></i></strong>
-            </div>
-            <span class="response-check">✓</span>
-          </div>
+          </template>
         </div>
+        <p class="sr-only">{{ c.universeSr }}</p>
       </section>
 
-      <section class="model-strip shell" :aria-label="c.compatibility">
+<section class="model-strip shell" :aria-label="c.compatibility">
         <span class="strip-label">{{ c.poweredBy }}</span>
         <div class="model-name claude-name"><span>✳</span>Claude</div>
         <div class="model-name">
@@ -591,7 +561,8 @@ import {
   resolveLandingApiBase,
   LANDING_DOC_PATH,
 } from '@/utils/tlLanding'
-import ParticleSculpture from '@/components/common/ParticleSculpture.vue'
+import type { GroupPlatform } from '@/types'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 
 const { locale, t } = useI18n()
 const appStore = useAppStore()
@@ -623,7 +594,6 @@ const year = new Date().getFullYear()
 const images = SHOWCASE_IMAGES
 
 const root = ref<HTMLElement>()
-const sculptureMode = ref(0)
 const paused = ref(false)
 const scrollProgress = ref(0)
 const imageIndex = ref(0)
@@ -637,12 +607,6 @@ const lightboxIndex = ref(0)
 const copyState = ref<'idle' | 'copied' | 'error'>('idle')
 let copyTimer: ReturnType<typeof setTimeout> | undefined
 let revealObserver: IntersectionObserver | undefined
-let shapeTimer: ReturnType<typeof setInterval> | undefined
-let nextShapeAt = Date.now() + 6500
-function selectShape(index: number) {
-  sculptureMode.value = index
-  nextShapeAt = Date.now() + 8000
-}
 function focusGame(event: Event) {
   if (activeDemo.value === 'code') (event.target as HTMLIFrameElement).focus()
 }
@@ -723,6 +687,12 @@ const c = computed(() => ({
     readDocs: t('creativeLanding.readDocs'),
     copyCode: t('creativeLanding.copyCode'),
     orbitImage: t('creativeLanding.orbitImage'),
+    universeEyebrow: t('creativeLanding.universeEyebrow'),
+    universeTitle: t('creativeLanding.universeTitle'),
+    universeDesc: t('creativeLanding.universeDesc'),
+    universeOn: t('creativeLanding.universeOn'),
+
+    universeSr: t('creativeLanding.universeSr'),
     curlHint: t('creativeLanding.curlHint'),
     copied: t('creativeLanding.copied'),
     copy: t('creativeLanding.copy'),
@@ -858,21 +828,47 @@ function closeImageOnBackdrop(event: MouseEvent) {
   )
     imageDialog.value.close()
 }
-const ORBIT_PERIOD = 14
-const orbitChips = computed(() =>
-  [
-    { id: 'claude', symbol: '✳', label: 'Claude' },
-    { id: 'openai', symbol: '◎', label: 'OpenAI' },
-    { id: 'image', symbol: '✦', label: c.value.orbitImage },
-  ].map((chip, i) => {
-    const shift = (i * ORBIT_PERIOD) / 3
-    return {
-      ...chip,
-      xDelay: `${-shift}s`,
-      yDelay: `${-(shift + ORBIT_PERIOD / 4)}s`,
-    }
-  })
-)
+const universeRings = computed(() => {
+  const defs = [
+    {
+      id: 'inner',
+      full: 24,
+      dir: 1,
+      items: [
+        { id: 'opus', platform: 'anthropic', label: 'Claude Opus', tone: '#ff9a6c', supported: true },
+        { id: 'gpt', platform: 'openai', label: 'GPT', tone: '#8ff0d4', supported: true },
+        { id: 'sonnet', platform: 'anthropic', label: 'Claude Sonnet', tone: '#ffb48a', supported: true },
+        { id: 'codex', platform: 'openai', label: 'Codex', tone: '#9fd0ff', supported: true },
+        { id: 'haiku', platform: 'anthropic', label: 'Claude Haiku', tone: '#ffc9a8', supported: true },
+        { id: 'gpt-image', platform: 'openai', label: c.value.orbitImage, tone: '#c4a8ff', supported: true },
+      ],
+    },
+    {
+      id: 'outer',
+      full: 40,
+      dir: -1,
+      items: [
+        ['gemini', 'Gemini'],
+        ['deepseek', 'DeepSeek'],
+        ['kimi', 'Kimi'],
+        ['zhipu', 'GLM'],
+        ['grok', 'Grok'],
+        ['minimax', 'MiniMax'],
+      ].map(([id, label]) => ({ id, platform: id, label, tone: '#9d97c8', supported: false })),
+    },
+  ]
+  return defs.map((ring) => ({
+    id: ring.id,
+    items: ring.items.map((item, i) => {
+      const shift = (i * ring.full) / ring.items.length
+      return {
+        ...item,
+        xDelay: `${-shift}s`,
+        yDelay: `${-((((shift + (ring.dir * ring.full) / 4) % ring.full) + ring.full) % ring.full)}s`,
+      }
+    }),
+  }))
+})
 type CodeTool = 'curl' | 'claude' | 'codex'
 const codeTool = ref<CodeTool>('curl')
 const codeTools = [
@@ -945,18 +941,6 @@ watch(paused, async (value) => {
   if (value) demoRunning.value = false
 })
 onMounted(() => {
-  shapeTimer = setInterval(() => {
-    if (
-      paused.value ||
-      document.hidden ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-      return
-    if (Date.now() >= nextShapeAt) {
-      sculptureMode.value = (sculptureMode.value + 1) % 3
-      nextShapeAt = Date.now() + 6500
-    }
-  }, 500)
   const elements = root.value?.querySelectorAll('[data-reveal]') || []
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches)
     elements.forEach((el) => el.classList.add('revealed'))
@@ -978,7 +962,6 @@ onMounted(() => {
   updateProgress()
 })
 onBeforeUnmount(() => {
-  clearInterval(shapeTimer)
   revealObserver?.disconnect()
   clearTimeout(copyTimer)
   window.removeEventListener('scroll', updateProgress)

@@ -213,6 +213,12 @@ export default {
   "codeFooter": "使用已开通的模型与 API Key",
   "codeToolSwitch": "选择示例客户端",
   "orbitImage": "图像模型",
+  "universeEyebrow": "旗舰模型阵容",
+  "universeTitle": "汇聚最强大的模型",
+  "universeDesc": "Claude 与 GPT · Codex，当下最顶尖的旗舰模型，一个入口、一把密钥直接调用。",
+  "universeOn": "顶尖旗舰 · 官方原生能力 · 即开即用",
+
+  "universeSr": "本站已接入 Claude 与 GPT · Codex（含图像生成）。",
   "curlHint": "收到 JSON 响应，就说明密钥和模型都已打通",
   "codeClaudeStep": "安装并设置连接变量",
   "codeCodexStep": "写入 Codex 配置",
