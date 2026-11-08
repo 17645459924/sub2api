@@ -1,0 +1,33 @@
+name: Deploy Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha8:
+        description: "Image tag suffix (first 8 chars of the commit built by Build Image)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate input
+        run: |
+          [[ "${{ inputs.sha8 }}" =~ ^[0-9a-f]{8}$ ]] || { echo "sha8 must be 8 hex chars"; exit 1; }
+
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o ServerAliveInterval=15 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "/opt/sub2api/deploy.sh ${{ inputs.sha8 }}"
