@@ -29,7 +29,6 @@
           <router-link v-if="showModelPlazaEntry" to="/model-plaza">{{ c.modelPlaza }}</router-link>
         </nav>
         <div class="header-actions">
-          <router-link :to="startPath" class="nav-start">{{ c.start }}</router-link>
           <button
             class="language-button"
             type="button"
@@ -49,9 +48,23 @@
     </header>
 
     <main>
-      <section class="universe" :class="{ paused }" aria-labelledby="hero-title">
+      <section
+        class="universe"
+        :class="{ paused }"
+        aria-labelledby="hero-title"
+        @pointermove="onHeroMove"
+        @pointerleave="onHeroLeave"
+      >
+        <div class="universe-aurora" aria-hidden="true">
+          <i></i><i></i><i></i><b class="shoot"></b><b class="shoot s2"></b>
+        </div>
         <div class="universe-stars" aria-hidden="true"></div>
-        <div class="universe-stage shell">
+        <div class="universe-stars stars-b" aria-hidden="true"></div>
+        <div class="universe-stars stars-c" aria-hidden="true"></div>
+        <div class="universe-grid" aria-hidden="true"></div>
+        <div class="universe-spot" aria-hidden="true"></div>
+        <div ref="stageEl" class="universe-stage shell">
+          <canvas ref="flowEl" class="universe-flow" aria-hidden="true"></canvas>
           <span
             v-for="ring in universeRings"
             :key="ring.id"
@@ -87,7 +100,10 @@
                 >{{ c.tryDemo }}</a
               >
             </div>
-            <p class="universe-tagline">{{ c.universeOn }}</p>
+            <ul class="universe-points">
+              <li><span class="point-dot" aria-hidden="true"></span>{{ c.pointDirect }}</li>
+              <li><s class="point-5h" aria-hidden="true">5h</s>{{ c.pointNoLimit }}</li>
+            </ul>
           </div>
           <template v-for="ring in universeRings" :key="`items-${ring.id}`">
             <div
@@ -95,18 +111,34 @@
               :key="item.id"
               class="uni-chip"
               :class="[`ring-${ring.id}`, { supported: item.supported }]"
-              :style="{ '--x-delay': item.xDelay, '--y-delay': item.yDelay }"
+              :style="{ '--x-delay': item.xDelay, '--y-delay': item.yDelay, '--i': item.idx }"
               aria-hidden="true"
             >
               <div class="uni-x">
                 <div class="uni-y">
-                  <div class="uni-badge">
+                  <div class="uni-badge uni-depth">
                     <span class="uni-icon" :style="{ '--tone': item.tone }"
                       ><PlatformIcon :platform="item.platform as GroupPlatform" size="lg"
                     /></span>
                     <span class="uni-name">{{ item.label }}</span>
+                    <span v-if="item.supported" class="uni-tip"
+                      ><b>{{ item.label }}</b
+                      >{{ c.pointDirect }} · {{ c.pointNoLimit }}</span
+                    >
                   </div>
                 </div>
+              </div>
+            </div>
+            <div
+              v-for="dot in ring.dots"
+              :key="dot.id"
+              class="uni-chip uni-comet"
+              :class="`ring-${ring.id}`"
+              :style="{ '--x-delay': dot.xDelay, '--y-delay': dot.yDelay, '--k': dot.k }"
+              aria-hidden="true"
+            >
+              <div class="uni-x">
+                <div class="uni-y"><i class="comet-dot"></i></div>
               </div>
             </div>
           </template>
@@ -683,6 +715,8 @@ const c = computed(() => ({
     universeOn: t('creativeLanding.universeOn'),
 
     universeSr: t('creativeLanding.universeSr'),
+    pointDirect: t('creativeLanding.pointDirect'),
+    pointNoLimit: t('creativeLanding.pointNoLimit'),
     curlHint: t('creativeLanding.curlHint'),
     copied: t('creativeLanding.copied'),
     copy: t('creativeLanding.copy'),
@@ -842,18 +876,157 @@ const universeRings = computed(() => {
       ],
     },
   ]
+  const norm = (v: number, full: number) => ((v % full) + full) % full
+  const comets: Record<string, number[]> = { inner: [0], outer: [0, 0.5] }
+  let idx = 0
   return defs.map((ring) => ({
     id: ring.id,
     items: ring.items.map((item, i) => {
       const shift = (i * ring.full) / ring.items.length
       return {
         ...item,
+        idx: idx++,
         xDelay: `${-shift}s`,
-        yDelay: `${-((((shift + (ring.dir * ring.full) / 4) % ring.full) + ring.full) % ring.full)}s`,
+        yDelay: `${-norm(shift + (ring.dir * ring.full) / 4, ring.full)}s`,
       }
     }),
+    dots: (comets[ring.id] || []).flatMap((frac, ci) =>
+      Array.from({ length: 10 }, (_, k) => {
+        const shift = norm(frac * ring.full + ring.full * 0.07 - k * 0.14, ring.full)
+        return {
+          id: `${ring.id}-c${ci}-${k}`,
+          k,
+          xDelay: `${-shift}s`,
+          yDelay: `${-norm(shift + (ring.dir * ring.full) / 4, ring.full)}s`,
+        }
+      }),
+    ),
   }))
 })
+const stageEl = ref<HTMLElement>()
+const flowEl = ref<HTMLCanvasElement>()
+let flowStop: (() => void) | undefined
+function onHeroMove(e: PointerEvent) {
+  if (e.pointerType !== 'mouse') return
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  const x = (e.clientX - r.left) / r.width
+  const y = (e.clientY - r.top) / r.height
+  el.style.setProperty('--mx', `${(x * 100).toFixed(1)}%`)
+  el.style.setProperty('--my', `${(y * 100).toFixed(1)}%`)
+  el.style.setProperty('--px', ((x - 0.5) * 2).toFixed(3))
+  el.style.setProperty('--py', ((y - 0.5) * 2).toFixed(3))
+}
+function onHeroLeave(e: PointerEvent) {
+  const el = e.currentTarget as HTMLElement
+  ;['--mx', '--my', '--px', '--py'].forEach((k) => el.style.removeProperty(k))
+}
+function startFlow() {
+  const stage = stageEl.value
+  const canvas = flowEl.value
+  if (!stage || !canvas || !window.matchMedia) return
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  let w = 0
+  let h = 0
+  let dpr = 1
+  const resize = () => {
+    dpr = Math.min(window.devicePixelRatio || 1, 2)
+    w = stage.offsetWidth
+    h = stage.offsetHeight
+    canvas.width = Math.max(1, Math.round(w * dpr))
+    canvas.height = Math.max(1, Math.round(h * dpr))
+  }
+  resize()
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : undefined
+  ro?.observe(stage)
+  type Pulse = { x0: number; y0: number; mx: number; my: number; t: number; speed: number; color: string }
+  const pulses: Pulse[] = []
+  let last = performance.now()
+  let nextSpawn = last + 800
+  let raf = 0
+  const at = (p: Pulse, t: number) => {
+    const cx = w / 2
+    const cy = h / 2
+    const u = 1 - t
+    return [u * u * p.x0 + 2 * u * t * p.mx + t * t * cx, u * u * p.y0 + 2 * u * t * p.my + t * t * cy]
+  }
+  const frame = (now: number) => {
+    raf = requestAnimationFrame(frame)
+    const dt = Math.min(0.05, (now - last) / 1000)
+    last = now
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    if (document.hidden || paused.value || window.innerWidth < 760) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return
+    if (now > nextSpawn) {
+      nextSpawn = now + 700 + Math.random() * 800
+      const icons = stage.querySelectorAll<HTMLElement>('.uni-chip.supported .uni-icon')
+      const el = icons[Math.floor(Math.random() * icons.length)]
+      if (el) {
+        const r = el.getBoundingClientRect()
+        const x0 = r.left + r.width / 2 - rect.left
+        const y0 = r.top + r.height / 2 - rect.top
+        const dx = w / 2 - x0
+        const dy = h / 2 - y0
+        const bend = (Math.random() < 0.5 ? -1 : 1) * 0.22
+        pulses.push({
+          x0,
+          y0,
+          mx: x0 + dx * 0.5 - dy * bend,
+          my: y0 + dy * 0.5 + dx * bend,
+          t: 0,
+          speed: 0.5 + Math.random() * 0.2,
+          color: getComputedStyle(el).getPropertyValue('--tone').trim() || '#7fd0ff',
+        })
+      }
+    }
+    ctx.lineCap = 'round'
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const p = pulses[i]
+      p.t += dt * p.speed
+      if (p.t >= 1) {
+        pulses.splice(i, 1)
+        continue
+      }
+      const fade = p.t < 0.12 ? p.t / 0.12 : p.t > 0.78 ? (1 - p.t) / 0.22 : 1
+      const steps = 16
+      let prev = at(p, p.t)
+      for (let k = 1; k <= steps; k++) {
+        const tt = p.t - k * 0.02
+        if (tt < 0) break
+        const cur = at(p, tt)
+        ctx.globalAlpha = (1 - k / steps) * fade * 0.9
+        ctx.strokeStyle = p.color
+        ctx.lineWidth = 3 * (1 - k / steps) + 0.5
+        ctx.beginPath()
+        ctx.moveTo(prev[0], prev[1])
+        ctx.lineTo(cur[0], cur[1])
+        ctx.stroke()
+        prev = cur
+      }
+      const head = at(p, p.t)
+      ctx.globalAlpha = fade
+      ctx.shadowColor = p.color
+      ctx.shadowBlur = 14
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(head[0], head[1], 3, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+    }
+    ctx.globalAlpha = 1
+  }
+  raf = requestAnimationFrame(frame)
+  flowStop = () => {
+    cancelAnimationFrame(raf)
+    ro?.disconnect()
+  }
+}
+onMounted(startFlow)
+onBeforeUnmount(() => flowStop?.())
 type CodeTool = 'curl' | 'claude' | 'codex'
 const codeTool = ref<CodeTool>('curl')
 const codeTools = [

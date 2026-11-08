@@ -219,6 +219,8 @@ export default {
   "universeOn": "顶尖旗舰 · 官方原生能力 · 即开即用",
 
   "universeSr": "本站已接入 Claude 与 GPT · Codex（含图像生成）。",
+  "pointDirect": "国内直连",
+  "pointNoLimit": "无 5 小时限额",
   "curlHint": "收到 JSON 响应，就说明密钥和模型都已打通",
   "codeClaudeStep": "安装并设置连接变量",
   "codeCodexStep": "写入 Codex 配置",

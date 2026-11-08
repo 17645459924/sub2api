@@ -219,6 +219,8 @@ export default {
   "universeOn": "Flagship models · Native capabilities · Ready to use",
 
   "universeSr": "Claude and GPT · Codex (including image generation) are available on this site.",
+  "pointDirect": "Direct access in China",
+  "pointNoLimit": "No 5-hour limit",
   "curlHint": "A JSON response means your key and model are connected",
   "codeClaudeStep": "Install and set connection variables",
   "codeCodexStep": "Write the Codex config",
