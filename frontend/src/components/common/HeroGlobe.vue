@@ -32,7 +32,7 @@ onMounted(async () => {
     const camera = new T.PerspectiveCamera(42, 1, .1, 40)
     camera.position.set(0, 0, 7.8)
     const earth = new T.Group()
-    earth.rotation.set(.12, -1.8, -.18)
+    earth.rotation.set(.32, -3.4, -.12)
     scene.add(earth)
 
     let frame = 0
@@ -88,7 +88,7 @@ onMounted(async () => {
     stop = release
 
     const globe = new T.Mesh(new T.SphereGeometry(1.98, 64, 48), new T.MeshPhongMaterial({
-      color: 0x041126, emissive: 0x010613, specular: 0x18476a, shininess: 18,
+      color: 0x06214a, emissive: 0x020c20, specular: 0x2a7fc0, shininess: 28,
     }))
     earth.add(globe)
     scene.add(new T.AmbientLight(0x709cce, 1.8))
@@ -110,8 +110,9 @@ onMounted(async () => {
           varying float brightness;
           void main() {
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            brightness = .5 + .5 * smoothstep(-1.0, 2.0, (modelMatrix * vec4(position, 1.0)).z);
-            gl_PointSize = clamp(size * 320.0 / -mv.z, 1.0, 4.0);
+            vec3 n = normalize((modelMatrix * vec4(position, 1.0)).xyz);
+            brightness = .18 + .82 * smoothstep(-.35, .85, dot(n, normalize(vec3(-.55, .45, .7))));
+            gl_PointSize = clamp(size * 320.0 / -mv.z * (.75 + brightness * .6), 1.0, 5.0);
             gl_Position = projectionMatrix * mv;
           }`,
         fragmentShader: `uniform vec3 color; uniform float opacity; varying float brightness;
@@ -130,7 +131,7 @@ onMounted(async () => {
     for (let i = 0; i < landCoordinates.length; i += 2) {
       land.push(...position(landCoordinates[i], landCoordinates[i + 1]).toArray())
     }
-    points(land, 0x8cddff, .052, .95)
+    points(land, 0xc4f1ff, .06, 1)
     const ocean: number[] = []
     const goldenAngle = Math.PI * (3 - Math.sqrt(5))
     for (let i = 0; i < 3400; i++) {
@@ -138,7 +139,7 @@ onMounted(async () => {
       const r = Math.sqrt(1 - y * y)
       ocean.push(2 * r * Math.cos(i * goldenAngle), 2 * y, 2 * r * Math.sin(i * goldenAngle))
     }
-    points(ocean, 0x3169b2, .025, .38)
+    points(ocean, 0x2f78c8, .026, .5)
 
     const grid: number[] = []
     for (let lat = -60; lat <= 60; lat += 30) {
@@ -151,16 +152,18 @@ onMounted(async () => {
     gridGeometry.setAttribute('position', new T.Float32BufferAttribute(grid, 3))
     earth.add(new T.LineSegments(gridGeometry, new T.LineBasicMaterial({ color: 0x4886c9, transparent: true, opacity: .1, depthWrite: false })))
 
-    const atmosphere = new T.Mesh(new T.SphereGeometry(2.12, 64, 48), new T.ShaderMaterial({
+    const atmosphere = new T.Mesh(new T.SphereGeometry(2.2, 64, 48), new T.ShaderMaterial({
       vertexShader: `varying vec3 normalView; varying vec3 viewPosition;
         void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); normalView = normalize(normalMatrix * normal); viewPosition = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `varying vec3 normalView; varying vec3 viewPosition;
-        void main() { float rim = pow(1.0 - abs(dot(normalize(normalView), normalize(viewPosition))), 3.0); gl_FragColor = vec4(.13, .48, 1.0, rim * .48); }`,
+        void main() { float rim = pow(1.0 - abs(dot(normalize(normalView), normalize(viewPosition))), 3.0); gl_FragColor = vec4(.22, .6, 1.0, rim * .85); }`,
       side: T.BackSide, transparent: true, depthWrite: false, blending: T.AdditiveBlending,
     }))
     earth.add(atmosphere)
 
     // Elevated great-circle connections between recognizable geographic locations.
+    const cities = [[116.4, 39.9], [121.5, 31.2], [113.3, 23.1], [114.1, 22.3], [139.7, 35.7], [103.8, 1.35], [-122.4, 37.8], [-74, 40.7], [0, 51.5], [2.35, 48.9], [55.3, 25.2], [151.2, -33.9], [77.2, 28.6], [-46.6, -23.5]]
+    points(cities.flatMap(([lon, lat]) => position(lon, lat, 2.02).toArray()), 0xfff3c4, .16, 1)
     const routes = [[116, 40, -122, 38], [116, 40, 2, 49], [139, 36, 151, -34], [-74, 41, 0, 51], [104, 1, 55, 25]]
     routes.forEach(([fromLon, fromLat, toLon, toLat], index) => {
       const start = position(fromLon, fromLat, 2.04)
@@ -171,8 +174,8 @@ onMounted(async () => {
       })
       const curve = new T.CatmullRomCurve3(vertices)
       const geometry = new T.BufferGeometry().setFromPoints(vertices)
-      earth.add(new T.Line(geometry, new T.LineBasicMaterial({ color: index % 2 ? 0x55c8d5 : 0x70a9ff, transparent: true, opacity: .3, depthWrite: false })))
-      const dot = new T.Mesh(new T.SphereGeometry(.018, 8, 6), new T.MeshBasicMaterial({ color: 0xaff2ff }))
+      earth.add(new T.Line(geometry, new T.LineBasicMaterial({ color: index % 2 ? 0x55c8d5 : 0x70a9ff, transparent: true, opacity: .6, depthWrite: false })))
+      const dot = new T.Mesh(new T.SphereGeometry(.03, 10, 8), new T.MeshBasicMaterial({ color: 0xe6fbff }))
       dot.position.copy(curve.getPoint(index / routes.length))
       earth.add(dot)
       orbitDots.push({ dot, curve, offset: index / routes.length })

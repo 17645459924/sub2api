@@ -874,10 +874,11 @@ const timeline = computed(() => {
     ['2023', 'GPT-4 与 Claude 发布', 'GPT-4 and Claude released'],
     ['2024', 'Claude 3 系列发布', 'Claude 3 family released'],
     ['2025', 'DeepSeek-R1 开源', 'DeepSeek-R1 open-sourced'],
+    ['2026', 'Claude Sonnet 4.6 发布', 'Claude Sonnet 4.6 released'],
   ]
   return rows.map(([year, a, b], i) => {
-    const dx = (i - 3) * 13
-    return { year, text: zh ? a : b, dx, drop: (i - 3) * (i - 3) * 3 }
+    const dx = (i - 3.5) * 12
+    return { year, text: zh ? a : b, dx, drop: Math.round((i - 3.5) * (i - 3.5) * 2.6) }
   })
 })
 const universeRings = computed(() => {
