@@ -2932,3 +2932,52 @@
   background: linear-gradient(to top, #bfeaff66, #5bbbff1a 40%, transparent 85%);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent); mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
 }
+
+/* ---- AI timeline along the planet horizon ---- */
+.liberty .universe { padding-bottom: 160px; }
+.universe-aurora i:nth-child(1) { top: calc(100% - 150px + 115vw); }
+.universe-aurora i:nth-child(2) { top: calc(100% - 150px); }
+.universe-aurora i:nth-child(3) { top: calc(100% - 150px); height: calc(100% - 150px); }
+.universe-timeline {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 150px; margin: 0; padding: 0; list-style: none; z-index: 4; pointer-events: none;
+}
+.universe-timeline li {
+  position: absolute; left: calc(50% + var(--dx) * 1vw); top: calc(30px + var(--drop) * 1vw); translate: -50% 0;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; width: 12vw; min-width: 96px;
+  opacity: 0; animation: tl-in .8s ease-out forwards; animation-delay: calc(var(--dx) * 0.02s + 1.4s);
+}
+.universe-timeline li i { width: 9px; height: 9px; border-radius: 50%; background: #dff6ff; box-shadow: 0 0 0 4px #5bbbff33, 0 0 16px #7fd0ff; margin-bottom: 6px; }
+.universe-timeline li b { font: 700 15px/1.2 ui-monospace, monospace; color: #cfeaff; letter-spacing: .04em; }
+.universe-timeline li span { font-size: 12px; color: #8fb0cf; line-height: 1.4; }
+@keyframes tl-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (min-width: 1281px) { .universe-timeline li b { font-size: clamp(15px, 1vw, 20px); } .universe-timeline li span { font-size: clamp(12px, .85vw, 16px); } }
+@media (max-width: 960px) { .universe-timeline li span { display: none; } .universe-timeline li { min-width: 60px; } }
+@media (max-width: 760px) { .universe-timeline { display: none; } .liberty .universe { padding-bottom: 60px; } }
+@media (prefers-reduced-motion: reduce) { .universe-timeline li { animation: none; opacity: 1; } }
+
+/* Three.js globe replaces the portal and horizon effects. */
+.liberty .globe-universe { background: radial-gradient(ellipse at 50% 46%, #0b1931 0, #060d1c 48%, #040914 85%); }
+.globe-universe .universe-stage { transform: none; }
+.globe-universe .universe-core { z-index: 10; text-shadow: 0 2px 14px #020612, 0 0 32px #020612; }
+.globe-universe .universe-core::before { content: ''; position: absolute; z-index: -1; inset: -24px -30px; pointer-events: none; background: radial-gradient(ellipse, #040914e8 15%, #040914b8 45%, transparent 72%); }
+.globe-universe .hero-actions .button-text { background: #081326c9; }
+.globe-universe .universe-ring { opacity: .5; }
+.globe-universe .uni-tip { text-shadow: none; }
+@media (max-width: 960px) { .globe-universe .universe-core::before { display: none; } }
+@media (min-width: 961px) {
+  .universe-stage { --b-outer: clamp(200px, calc((100vh - 400px) / 2), 430px); --b-inner: calc(var(--b-outer) * .83); height: calc(var(--b-outer) * 2 + 140px); }
+  .liberty .universe { padding-top: 80px; min-height: 100vh; box-sizing: border-box; }
+}
+
+.globe-universe .hero-accent, .globe-universe .hero-actions .button { text-shadow: none; }
+
+/* timeline v2: always fully visible, readable */
+.universe-timeline { height: 130px; }
+.universe-timeline::before {
+  content: ''; position: absolute; left: 8%; right: 8%; top: 34px; height: 1px;
+  background: linear-gradient(90deg, transparent, #7fd0ff88 15%, #7fd0ff88 85%, transparent);
+}
+.universe-timeline li { top: calc(30px + var(--drop) * 1px); width: 12vw; }
+.universe-timeline li b { font-size: clamp(16px, 1.1vw, 22px); color: #e6f4ff; text-shadow: 0 0 12px #5bbbffaa; }
+.universe-timeline li span { font-size: clamp(12px, .9vw, 16px); color: #b4cde4; }
+.liberty .universe { padding-bottom: 150px; }

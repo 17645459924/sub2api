@@ -49,22 +49,15 @@
 
     <main>
       <section
-        class="universe"
+        class="universe globe-universe"
         :class="{ paused }"
         aria-labelledby="hero-title"
         @pointermove="onHeroMove"
         @pointerleave="onHeroLeave"
       >
-        <div class="universe-aurora" aria-hidden="true">
-          <i></i><i></i><i></i><b class="shoot"></b><b class="shoot s2"></b>
-        </div>
         <div class="universe-stars" aria-hidden="true"></div>
-        <div class="universe-stars stars-b" aria-hidden="true"></div>
-        <div class="universe-stars stars-c" aria-hidden="true"></div>
-        <div class="universe-grid" aria-hidden="true"></div>
-        <div class="universe-spot" aria-hidden="true"></div>
-        <div ref="stageEl" class="universe-stage shell">
-          <canvas ref="flowEl" class="universe-flow" aria-hidden="true"></canvas>
+        <div class="universe-stage shell">
+          <HeroGlobe :paused="paused" />
           <span
             v-for="ring in universeRings"
             :key="ring.id"
@@ -150,6 +143,17 @@
             </div>
           </template>
         </div>
+        <ol class="universe-timeline" :aria-label="isZh ? 'AI 发展时间线' : 'AI timeline'">
+          <li
+            v-for="n in timeline"
+            :key="n.year"
+            :style="{ '--dx': n.dx, '--drop': n.drop }"
+          >
+            <i aria-hidden="true"></i>
+            <b>{{ n.year }}</b>
+            <span>{{ n.text }}</span>
+          </li>
+        </ol>
         <p class="sr-only">{{ c.universeSr }}</p>
       </section>
 
@@ -592,6 +596,7 @@ import {
 } from '@/utils/tlLanding'
 import type { GroupPlatform } from '@/types'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import HeroGlobe from '@/components/common/HeroGlobe.vue'
 
 const { locale, t } = useI18n()
 const appStore = useAppStore()
@@ -859,6 +864,22 @@ function closeImageOnBackdrop(event: MouseEvent) {
   )
     imageDialog.value.close()
 }
+const timeline = computed(() => {
+  const zh = isZh.value
+  const rows: [string, string, string][] = [
+    ['2017', 'Transformer 架构提出', 'Transformer architecture'],
+    ['2018', 'GPT-1 与 BERT 发布', 'GPT-1 and BERT released'],
+    ['2020', 'GPT-3 发布', 'GPT-3 released'],
+    ['2022', 'ChatGPT 发布', 'ChatGPT launched'],
+    ['2023', 'GPT-4 与 Claude 发布', 'GPT-4 and Claude released'],
+    ['2024', 'Claude 3 系列发布', 'Claude 3 family released'],
+    ['2025', 'DeepSeek-R1 开源', 'DeepSeek-R1 open-sourced'],
+  ]
+  return rows.map(([year, a, b], i) => {
+    const dx = (i - 3) * 13
+    return { year, text: zh ? a : b, dx, drop: (i - 3) * (i - 3) * 3 }
+  })
+})
 const universeRings = computed(() => {
   const mk = (id: string, platform: string, label: string, tone: string, supported: boolean) => ({ id, platform, label, tone, supported })
   const defs = [
@@ -910,9 +931,6 @@ const universeRings = computed(() => {
     ),
   }))
 })
-const stageEl = ref<HTMLElement>()
-const flowEl = ref<HTMLCanvasElement>()
-let flowStop: (() => void) | undefined
 function onHeroMove(e: PointerEvent) {
   if (e.pointerType !== 'mouse') return
   const el = e.currentTarget as HTMLElement
@@ -928,112 +946,6 @@ function onHeroLeave(e: PointerEvent) {
   const el = e.currentTarget as HTMLElement
   ;['--mx', '--my', '--px', '--py'].forEach((k) => el.style.removeProperty(k))
 }
-function startFlow() {
-  const stage = stageEl.value
-  const canvas = flowEl.value
-  if (!stage || !canvas || !window.matchMedia) return
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  let w = 0
-  let h = 0
-  let dpr = 1
-  const resize = () => {
-    dpr = Math.min(window.devicePixelRatio || 1, 2)
-    w = stage.offsetWidth
-    h = stage.offsetHeight
-    canvas.width = Math.max(1, Math.round(w * dpr))
-    canvas.height = Math.max(1, Math.round(h * dpr))
-  }
-  resize()
-  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : undefined
-  ro?.observe(stage)
-  type Pulse = { x0: number; y0: number; mx: number; my: number; t: number; speed: number; color: string }
-  const pulses: Pulse[] = []
-  let last = performance.now()
-  let nextSpawn = last + 800
-  let raf = 0
-  const at = (p: Pulse, t: number) => {
-    const cx = w / 2
-    const cy = h / 2
-    const u = 1 - t
-    return [u * u * p.x0 + 2 * u * t * p.mx + t * t * cx, u * u * p.y0 + 2 * u * t * p.my + t * t * cy]
-  }
-  const frame = (now: number) => {
-    raf = requestAnimationFrame(frame)
-    const dt = Math.min(0.05, (now - last) / 1000)
-    last = now
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, w, h)
-    if (document.hidden || paused.value || window.innerWidth < 760) return
-    const rect = canvas.getBoundingClientRect()
-    if (rect.bottom < 0 || rect.top > window.innerHeight) return
-    if (now > nextSpawn) {
-      nextSpawn = now + 700 + Math.random() * 800
-      const icons = stage.querySelectorAll<HTMLElement>('.uni-chip.supported .uni-icon')
-      const el = icons[Math.floor(Math.random() * icons.length)]
-      if (el) {
-        const r = el.getBoundingClientRect()
-        const x0 = r.left + r.width / 2 - rect.left
-        const y0 = r.top + r.height / 2 - rect.top
-        const dx = w / 2 - x0
-        const dy = h / 2 - y0
-        const bend = (Math.random() < 0.5 ? -1 : 1) * 0.22
-        pulses.push({
-          x0,
-          y0,
-          mx: x0 + dx * 0.5 - dy * bend,
-          my: y0 + dy * 0.5 + dx * bend,
-          t: 0,
-          speed: 0.5 + Math.random() * 0.2,
-          color: getComputedStyle(el).getPropertyValue('--tone').trim() || '#7fd0ff',
-        })
-      }
-    }
-    ctx.lineCap = 'round'
-    for (let i = pulses.length - 1; i >= 0; i--) {
-      const p = pulses[i]
-      p.t += dt * p.speed
-      if (p.t >= 1) {
-        pulses.splice(i, 1)
-        continue
-      }
-      const fade = p.t < 0.12 ? p.t / 0.12 : p.t > 0.78 ? (1 - p.t) / 0.22 : 1
-      const steps = 16
-      let prev = at(p, p.t)
-      for (let k = 1; k <= steps; k++) {
-        const tt = p.t - k * 0.02
-        if (tt < 0) break
-        const cur = at(p, tt)
-        ctx.globalAlpha = (1 - k / steps) * fade * 0.9
-        ctx.strokeStyle = p.color
-        ctx.lineWidth = 3 * (1 - k / steps) + 0.5
-        ctx.beginPath()
-        ctx.moveTo(prev[0], prev[1])
-        ctx.lineTo(cur[0], cur[1])
-        ctx.stroke()
-        prev = cur
-      }
-      const head = at(p, p.t)
-      ctx.globalAlpha = fade
-      ctx.shadowColor = p.color
-      ctx.shadowBlur = 14
-      ctx.fillStyle = '#ffffff'
-      ctx.beginPath()
-      ctx.arc(head[0], head[1], 3, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.shadowBlur = 0
-    }
-    ctx.globalAlpha = 1
-  }
-  raf = requestAnimationFrame(frame)
-  flowStop = () => {
-    cancelAnimationFrame(raf)
-    ro?.disconnect()
-  }
-}
-onMounted(startFlow)
-onBeforeUnmount(() => flowStop?.())
 type CodeTool = 'curl' | 'claude' | 'codex'
 const codeTool = ref<CodeTool>('curl')
 const codeTools = [
