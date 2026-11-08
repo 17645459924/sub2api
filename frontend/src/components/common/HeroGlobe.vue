@@ -7,7 +7,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type * as THREE from 'three'
-import landCoordinates from '@/assets/earth-land.json'
+import dayUrl from '@/assets/earth/earth_atmos_2048.jpg'
+import nightUrl from '@/assets/earth/earth_lights_2048.png'
+import specUrl from '@/assets/earth/earth_specular_2048.jpg'
+import cloudUrl from '@/assets/earth/earth_clouds_1024.png'
 
 const props = defineProps<{ paused: boolean }>()
 const host = ref<HTMLDivElement>()
@@ -32,7 +35,7 @@ onMounted(async () => {
     const camera = new T.PerspectiveCamera(42, 1, .1, 40)
     camera.position.set(0, 0, 7.8)
     const earth = new T.Group()
-    earth.rotation.set(.32, -3.4, -.12)
+    earth.rotation.set(.1, -3.55, -.1)
     scene.add(earth)
 
     let frame = 0
@@ -41,7 +44,7 @@ onMounted(async () => {
     let previous = 0
     let elapsed = 0
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const pixelRatio = renderer.getPixelRatio()
+    const textures: THREE.Texture[] = []
     const orbitDots: { dot: THREE.Mesh; curve: THREE.CatmullRomCurve3; offset: number }[] = []
 
     const resize = () => {
@@ -82,76 +85,79 @@ onMounted(async () => {
         if (Array.isArray(mesh.material)) mesh.material.forEach(material => material.dispose())
         else mesh.material?.dispose()
       })
+      textures.forEach(texture => texture.dispose())
       renderer.dispose()
       renderer.domElement.remove()
     }
     stop = release
 
-    const globe = new T.Mesh(new T.SphereGeometry(1.98, 64, 48), new T.MeshPhongMaterial({
-      color: 0x06214a, emissive: 0x020c20, specular: 0x2a7fc0, shininess: 28,
+    const lightDir = new T.Vector3(-.4, .3, .86).normalize()
+    scene.add(new T.AmbientLight(0x709cce, 1.2))
+    const sun = new T.DirectionalLight(0xffffff, 2)
+    sun.position.copy(lightDir).multiplyScalar(6)
+    scene.add(sun)
+
+    const loader = new T.TextureLoader()
+    const maxAniso = renderer.capabilities.getMaxAnisotropy()
+    const load = (url: string) => new Promise<THREE.Texture>((resolve, reject) => {
+      loader.load(url, (texture) => { texture.anisotropy = maxAniso; resolve(texture) }, undefined, reject)
+    })
+    const [dayMap, nightMap, specMap, cloudMap] = await Promise.all([load(dayUrl), load(nightUrl), load(specUrl), load(cloudUrl)])
+    if (disposed) return
+    ;[dayMap, nightMap, specMap, cloudMap].forEach(texture => { textures.push(texture) })
+
+    const globe = new T.Mesh(new T.SphereGeometry(2, 96, 64), new T.ShaderMaterial({
+      uniforms: { dayMap: { value: dayMap }, nightMap: { value: nightMap }, specMap: { value: specMap }, lightDir: { value: lightDir } },
+      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          vUv = uv;
+          vN = normalize(mat3(modelMatrix) * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vV = normalize(cameraPosition - wp.xyz);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: `uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D specMap; uniform vec3 lightDir;
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          vec3 n = normalize(vN);
+          float ndl = dot(n, lightDir);
+          float day = smoothstep(-.12, .3, ndl);
+          vec3 d = texture2D(dayMap, vUv).rgb;
+          vec3 lit = d * (.12 + 1.35 * max(ndl, 0.0));
+          vec3 night = texture2D(nightMap, vUv).rgb * vec3(1.5, 1.2, .75);
+          vec3 col = mix(night * 1.1 + d * vec3(.015, .03, .07), lit, day);
+          float twilight = smoothstep(-.1, .0, ndl) * (1.0 - smoothstep(.0, .2, ndl));
+          col += vec3(.9, .45, .2) * twilight * .12;
+          float spec = texture2D(specMap, vUv).r;
+          vec3 h = normalize(lightDir + vV);
+          col += vec3(.75, .88, 1.0) * pow(max(dot(n, h), 0.0), 55.0) * spec * 1.1 * day;
+          float rim = pow(1.0 - max(dot(n, vV), 0.0), 3.0);
+          col += vec3(.2, .5, 1.0) * rim * .55 * (.35 + .65 * day);
+          gl_FragColor = vec4(col, 1.0);
+        }`,
     }))
     earth.add(globe)
-    scene.add(new T.AmbientLight(0x709cce, 1.8))
-    const light = new T.DirectionalLight(0x78caff, 2.6)
-    light.position.set(-3, 3, 5)
-    scene.add(light)
+
+    const clouds = new T.Mesh(new T.SphereGeometry(2.03, 96, 64), new T.ShaderMaterial({
+      uniforms: { cloudMap: { value: cloudMap }, lightDir: { value: lightDir } },
+      vertexShader: `varying vec2 vUv; varying vec3 vN;
+        void main() { vUv = uv; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform sampler2D cloudMap; uniform vec3 lightDir; varying vec2 vUv; varying vec3 vN;
+        void main() {
+          vec4 c = texture2D(cloudMap, vUv);
+          float a = c.r * c.a;
+          float l = smoothstep(-.15, .4, dot(normalize(vN), lightDir));
+          gl_FragColor = vec4(vec3(.95, .97, 1.0) * (.06 + .94 * l), a * .55 * (.15 + .85 * l));
+        }`,
+      transparent: true, depthWrite: false,
+    }))
+    earth.add(clouds)
 
     const position = (lon: number, lat: number, radius = 2.005) => {
       const longitude = lon * Math.PI / 180
       const latitude = lat * Math.PI / 180
       return new T.Vector3(radius * Math.cos(latitude) * Math.cos(longitude), radius * Math.sin(latitude), -radius * Math.cos(latitude) * Math.sin(longitude))
     }
-    const points = (vertices: number[], color: number, size: number, opacity: number) => {
-      const geometry = new T.BufferGeometry()
-      geometry.setAttribute('position', new T.Float32BufferAttribute(vertices, 3))
-      const material = new T.ShaderMaterial({
-        uniforms: { color: { value: new T.Color(color) }, size: { value: size * pixelRatio }, opacity: { value: opacity } },
-        vertexShader: `uniform float size;
-          varying float brightness;
-          void main() {
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            vec3 n = normalize((modelMatrix * vec4(position, 1.0)).xyz);
-            brightness = .18 + .82 * smoothstep(-.35, .85, dot(n, normalize(vec3(-.55, .45, .7))));
-            gl_PointSize = clamp(size * 320.0 / -mv.z * (.75 + brightness * .6), 1.0, 5.0);
-            gl_Position = projectionMatrix * mv;
-          }`,
-        fragmentShader: `uniform vec3 color; uniform float opacity; varying float brightness;
-          void main() {
-            float radius = length(gl_PointCoord - .5);
-            if (radius > .5) discard;
-            float alpha = (1.0 - smoothstep(.12, .5, radius)) * opacity * brightness;
-            gl_FragColor = vec4(color, alpha);
-          }`,
-        transparent: true, depthWrite: false, blending: T.AdditiveBlending,
-      })
-      earth.add(new T.Points(geometry, material))
-    }
-    // Natural Earth 1:110m land, public domain. Coordinates sampled uniformly on a sphere.
-    const land: number[] = []
-    for (let i = 0; i < landCoordinates.length; i += 2) {
-      land.push(...position(landCoordinates[i], landCoordinates[i + 1]).toArray())
-    }
-    points(land, 0xc4f1ff, .06, 1)
-    const ocean: number[] = []
-    const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-    for (let i = 0; i < 3400; i++) {
-      const y = 1 - 2 * (i + .5) / 3400
-      const r = Math.sqrt(1 - y * y)
-      ocean.push(2 * r * Math.cos(i * goldenAngle), 2 * y, 2 * r * Math.sin(i * goldenAngle))
-    }
-    points(ocean, 0x2f78c8, .026, .5)
-
-    const grid: number[] = []
-    for (let lat = -60; lat <= 60; lat += 30) {
-      for (let lon = -180; lon < 180; lon += 3) grid.push(...position(lon, lat).toArray(), ...position(lon + 3, lat).toArray())
-    }
-    for (let lon = -180; lon < 180; lon += 30) {
-      for (let lat = -90; lat < 90; lat += 3) grid.push(...position(lon, lat).toArray(), ...position(lon, lat + 3).toArray())
-    }
-    const gridGeometry = new T.BufferGeometry()
-    gridGeometry.setAttribute('position', new T.Float32BufferAttribute(grid, 3))
-    earth.add(new T.LineSegments(gridGeometry, new T.LineBasicMaterial({ color: 0x4886c9, transparent: true, opacity: .1, depthWrite: false })))
-
     const atmosphere = new T.Mesh(new T.SphereGeometry(2.2, 64, 48), new T.ShaderMaterial({
       vertexShader: `varying vec3 normalView; varying vec3 viewPosition;
         void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); normalView = normalize(normalMatrix * normal); viewPosition = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
@@ -162,8 +168,6 @@ onMounted(async () => {
     earth.add(atmosphere)
 
     // Elevated great-circle connections between recognizable geographic locations.
-    const cities = [[116.4, 39.9], [121.5, 31.2], [113.3, 23.1], [114.1, 22.3], [139.7, 35.7], [103.8, 1.35], [-122.4, 37.8], [-74, 40.7], [0, 51.5], [2.35, 48.9], [55.3, 25.2], [151.2, -33.9], [77.2, 28.6], [-46.6, -23.5]]
-    points(cities.flatMap(([lon, lat]) => position(lon, lat, 2.02).toArray()), 0xfff3c4, .16, 1)
     const routes = [[116, 40, -122, 38], [116, 40, 2, 49], [139, 36, 151, -34], [-74, 41, 0, 51], [104, 1, 55, 25]]
     routes.forEach(([fromLon, fromLat, toLon, toLat], index) => {
       const start = position(fromLon, fromLat, 2.04)
@@ -187,6 +191,7 @@ onMounted(async () => {
       previous = now
       elapsed += delta
       earth.rotation.y += delta * .065
+      clouds.rotation.y += delta * .012
       orbitDots.forEach(({ dot, curve, offset }) => dot.position.copy(curve.getPoint((elapsed * .08 + offset) % 1)))
       renderer.render(scene, camera)
       frame = requestAnimationFrame(renderFrame)
