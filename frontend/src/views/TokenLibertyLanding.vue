@@ -89,20 +89,27 @@
               ></span>
             </h1>
             <p class="hero-description">
-              {{ c.description1 }}<br class="desktop-break" />{{ c.description2 }}
+              <span>{{ c.description1 }}</span>
+              <span>{{ c.description2 }}</span>
             </p>
             <div class="hero-actions">
               <router-link :to="startPath" class="button button-dark"
                 >{{ c.start }} <span aria-hidden="true">↗</span></router-link
               >
               <a href="#playground" class="button button-text"
-                ><span class="play-icon" aria-hidden="true">▷</span
-                >{{ c.tryDemo }}</a
+                ><svg class="hero-play-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m10 8 6 4-6 4V8Z" />
+                </svg>{{ c.tryDemo }}</a
               >
             </div>
             <ul class="universe-points">
               <li><span class="point-dot" aria-hidden="true"></span>{{ c.pointDirect }}</li>
-              <li><s class="point-5h" aria-hidden="true">5h</s>{{ c.pointNoLimit }}</li>
+              <li>
+                <svg class="point-check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="m3.5 8 3 3 6-6" />
+                </svg>{{ c.pointNoLimit }}
+              </li>
             </ul>
           </div>
           <template v-for="ring in universeRings" :key="`items-${ring.id}`">
