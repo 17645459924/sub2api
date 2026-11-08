@@ -2991,3 +2991,10 @@
 .globe-universe .universe-core { text-shadow: 0 1px 2px #020612, 0 2px 10px #020612, 0 0 26px #020612cc; }
 .globe-universe .hero-description, .globe-universe .universe-points li { color: #eef6ff; }
 .globe-universe .universe-points li, .globe-universe .announcement { background: #06122499; }
+
+/* moderate scrim behind hero copy */
+.globe-universe .universe-core::before {
+  display: block; content: ''; position: absolute; z-index: -1; inset: -40px -90px; pointer-events: none;
+  background: radial-gradient(ellipse closest-side, #040a1a8c 0%, #040a1a66 45%, #040a1a22 75%, transparent 100%);
+}
+@media (max-width: 960px) { .globe-universe .universe-core::before { display: block; inset: -20px -20px; } }
