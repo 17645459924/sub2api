@@ -564,6 +564,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	plainOfficialAPIKey := isOfficialAnthropicAPIKeyAccount(account)
+	if plainOfficialAPIKey {
+		delete(payload, "system")
+		delete(payload, "metadata")
+	}
 	payloadBytes, _ := json.Marshal(payload)
 	payloadBytes, err = stripAnthropicAccountTemperature(account, payloadBytes)
 	if err != nil {
@@ -582,9 +587,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Apply Claude Code client headers
-	for key, value := range claude.DefaultHeaders() {
-		req.Header.Set(key, value)
+	// 官方 API Key 账号不伪装 Claude Code：部分 Key 遇到 Claude Code 标识会被上游误报 credit balance。
+	if !plainOfficialAPIKey {
+		for key, value := range claude.DefaultHeaders() {
+			req.Header.Set(key, value)
+		}
 	}
 
 	// Set authentication header
@@ -592,7 +599,9 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		if !plainOfficialAPIKey {
+			req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		}
 		// Ollama Cloud Anthropic 兼容端点按实际 base_url 强制 Bearer，
 		// 其余保持 extra/default 行为。
 		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetBaseURL())

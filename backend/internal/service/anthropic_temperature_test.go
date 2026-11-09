@@ -72,6 +72,11 @@ func TestAnthropicTemperatureAccountConnection(t *testing.T) {
 			require.Equal(t, !disabled, gjson.GetBytes(upstream.bodies[0], "temperature").Exists())
 			require.Equal(t, "claude-opus-5-5", gjson.GetBytes(upstream.bodies[0], "model").String())
 			require.Equal(t, account.GetCredential("api_key"), upstream.requests[0].Header.Get("x-api-key"))
+			if isOfficialAnthropicAPIKeyAccount(account) {
+				require.NotContains(t, upstream.requests[0].Header.Get("anthropic-beta"), "claude-code")
+				require.Empty(t, upstream.requests[0].Header.Get("x-app"))
+				require.False(t, gjson.GetBytes(upstream.bodies[0], "system").Exists())
+			}
 		})
 	}
 }
