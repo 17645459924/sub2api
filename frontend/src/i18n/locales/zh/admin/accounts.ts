@@ -931,6 +931,8 @@ export default {
         apiKeyPassthroughDesc:
           '仅对 Anthropic API Key 生效。开启后，messages/count_tokens 请求将透传上游并仅替换认证，保留计费/并发/审计及必要安全过滤；关闭即可回滚到现有兼容链路。',
         disableTemperature: '不发送 temperature',
+        hideClaudeCode: '隐藏 Claude Code 标识',
+        hideClaudeCodeDesc: '开启后，转发时移除 claude-code beta、system 里的计费标记，并把 claude-cli 的 User-Agent 换成通用值。适用于遇到 Claude Code 流量会被误报“余额不足”的官方 Key。',
         disableTemperatureDesc: '开启后，连接测试和实际转发都会移除 temperature 参数，适用于不接受该参数的 credits 上游；普通转发和自动透传均生效。',
         apiKeyAuthScheme: '上游认证方式',
         apiKeyAuthSchemeDesc: '选择转发到 Anthropic-compatible 上游时使用的 API Key 认证头。Ollama Cloud 使用 Authorization: Bearer。',

@@ -2430,6 +2430,39 @@
       >
         <div class="flex items-center justify-between gap-4">
           <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.hideClaudeCode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.anthropic.hideClaudeCodeDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="anthropicHideClaudeCode"
+            :aria-label="t('admin.accounts.anthropic.hideClaudeCode')"
+            data-testid="anthropic-hide-claude-code"
+            @click="anthropicHideClaudeCode = !anthropicHideClaudeCode"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              anthropicHideClaudeCode ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                anthropicHideClaudeCode ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
             <label class="input-label mb-0">{{ t('admin.accounts.anthropic.apiKeyAuthScheme') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.anthropic.apiKeyAuthSchemeDesc') }}
@@ -4216,6 +4249,7 @@ const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
 const anthropicDisableTemperature = ref(false)
+const anthropicHideClaudeCode = ref(false)
 const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
@@ -4712,6 +4746,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexImageToolMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
   anthropicDisableTemperature.value = false
+  anthropicHideClaudeCode.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
@@ -4777,6 +4812,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (newAccount.platform === 'anthropic' && newAccount.type === 'apikey') {
     anthropicPassthroughEnabled.value = extra?.anthropic_passthrough === true
     anthropicDisableTemperature.value = extra?.anthropic_disable_temperature === true
+    anthropicHideClaudeCode.value = extra?.anthropic_hide_claude_code === true
     anthropicAPIKeyAuthScheme.value = extra?.anthropic_apikey_auth_scheme === 'authorization_bearer'
       ? 'authorization_bearer'
       : 'x_api_key'
@@ -6229,6 +6265,11 @@ const handleSubmit = async () => {
         newExtra.anthropic_disable_temperature = true
       } else {
         delete newExtra.anthropic_disable_temperature
+      }
+      if (anthropicHideClaudeCode.value) {
+        newExtra.anthropic_hide_claude_code = true
+      } else {
+        delete newExtra.anthropic_hide_claude_code
       }
       if (anthropicPassthroughEnabled.value) {
         newExtra.anthropic_passthrough = true
