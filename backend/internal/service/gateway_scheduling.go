@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	mathrand "math/rand"
@@ -411,6 +412,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							// 粘性账号槽位满且等待队列已满，继续使用负载感知选择
 						} else if !gatePass {
 							stickyCacheMissReason = "gate_check"
+							if !s.isAccountSchedulableForSelection(stickyAccount) {
+								_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+							}
 						} else {
 							stickyCacheMissReason = "rpm_red"
 						}
@@ -430,6 +434,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						logger.LegacyPrintf("service.gateway", "[StickyCacheMiss] reason=account_cleared account_id=%d session=%s current_rpm=0 base_rpm=0",
 							stickyAccountID, shortSessionHash(sessionHash))
 					}
+				} else {
+					// 绑定账号已不在可调度列表（被禁用/删除/出分组），释放绑定
+					s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, stickyAccountID)
 				}
 			}
 
@@ -626,6 +633,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					"reason", "account_not_in_map",
 					"session", shortSessionHash(sessionHash),
 				)
+				s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, accountID)
 			}
 		}
 	} else if len(routingAccountIDs) == 0 && sessionHash != "" {
@@ -1523,6 +1531,22 @@ func (s *GatewayService) ReleaseAccountSession(ctx context.Context, account *Acc
 	}
 }
 
+// clearStickyBindingForMissingAccount 在粘性绑定的账号不在可调度列表时释放绑定，
+// 否则账号被禁用/删除后每次请求都会命中失效绑定。
+func (s *GatewayService) clearStickyBindingForMissingAccount(ctx context.Context, groupID *int64, sessionHash string, accountID int64) {
+	if s.cache == nil || sessionHash == "" {
+		return
+	}
+	_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+	logger.LegacyPrintf("service.gateway", "[StickyCacheMiss] reason=account_missing account_id=%d session=%s", accountID, shortSessionHash(sessionHash))
+}
+
+// stickyAccountGone 判断 getSchedulableAccount 的结果是否表示账号已不可用于粘性绑定：
+// 账号不存在或被调度阈值拦截。临时性的查询错误不算，避免误删健康绑定。
+func stickyAccountGone(account *Account, err error) bool {
+	return (err == nil && account == nil) || errors.Is(err, ErrAccountNotFound)
+}
+
 func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
 	var (
 		account *Account
@@ -1929,7 +1953,9 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 				if _, excluded := excludedIDs[accountID]; !excluded {
 					account, err := s.getSchedulableAccount(ctx, accountID)
 					// 检查账号分组归属和平台匹配（确保粘性会话不会跨分组或跨平台）
-					if err == nil {
+					if stickyAccountGone(account, err) {
+						s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, accountID)
+					} else if err == nil {
 						clearSticky := shouldClearStickySession(account, requestedModel)
 						if clearSticky {
 							_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
@@ -2051,7 +2077,9 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			if _, excluded := excludedIDs[accountID]; !excluded {
 				account, err := s.getSchedulableAccount(ctx, accountID)
 				// 检查账号分组归属和平台匹配（确保粘性会话不会跨分组或跨平台）
-				if err == nil {
+				if stickyAccountGone(account, err) {
+					s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, accountID)
+				} else if err == nil {
 					clearSticky := shouldClearStickySession(account, requestedModel)
 					if clearSticky {
 						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
@@ -2193,7 +2221,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 				if _, excluded := excludedIDs[accountID]; !excluded {
 					account, err := s.getSchedulableAccount(ctx, accountID)
 					// 检查账号分组归属和有效性：原生平台直接匹配，antigravity 需要启用混合调度
-					if err == nil {
+					if stickyAccountGone(account, err) {
+						s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, accountID)
+					} else if err == nil {
 						clearSticky := shouldClearStickySession(account, requestedModel)
 						if clearSticky {
 							_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
@@ -2317,7 +2347,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 			if _, excluded := excludedIDs[accountID]; !excluded {
 				account, err := s.getSchedulableAccount(ctx, accountID)
 				// 检查账号分组归属和有效性：原生平台直接匹配，antigravity 需要启用混合调度
-				if err == nil {
+				if stickyAccountGone(account, err) {
+					s.clearStickyBindingForMissingAccount(ctx, groupID, sessionHash, accountID)
+				} else if err == nil {
 					clearSticky := shouldClearStickySession(account, requestedModel)
 					if clearSticky {
 						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
