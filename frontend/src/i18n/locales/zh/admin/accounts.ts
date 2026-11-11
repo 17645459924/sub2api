@@ -555,6 +555,7 @@ export default {
         passiveSampled: '被动采样',
         sampledAt: '上游采样 · {time}',
         savedSampleAt: '已读取保存的采样（{time}），非实时查询；新请求经过此账号后才会更新。',
+        setupTokenSampleOnly: 'Setup Token 不支持实时查询，额度来自真实请求的上游采样；有请求经过此账号后会自动更新。',
         savedSampleOnly: '服务器仅返回已保存的上游采样，本次未取得实时额度。',
         liveQueriedAt: '已查询上游 · {time}（用量无变化时数值保持不变）',
         noLiveWindows: '上游未返回 5h / 7d 额度窗口，已保留原数据。',

@@ -1698,6 +1698,7 @@ const readLiveOpenAIUsage = async (accountID: number, requestVersion: number): P
   return usage
 }
 
+let setupTokenNoLiveQuery = false
 const readActiveClaudeUsage = async (accountID: number): Promise<AccountUsageInfo> => {
   let result: AccountUsageInfo
   try {
@@ -1712,6 +1713,8 @@ const readActiveClaudeUsage = async (accountID: number): Promise<AccountUsageInf
     // Keep the failure visible while reading actual request samples separately.
     try {
       const passive = await adminAPI.accounts.getUsage(accountID, 'passive', true)
+      // Setup tokens never have user:profile: this is expected, not an error.
+      if (missingProfileScope && props.account.type === 'setup-token') { setupTokenNoLiveQuery = true; return { ...passive, source: 'passive' } }
       if ((['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_fable'] as const).some(window => !isClaudeUsageUnknown(props.account, passive, window))) {
         return missingProfileScope ? { ...passive, source: 'passive' } : { ...passive, source: 'passive', error: message }
       }
@@ -1729,6 +1732,11 @@ const reportQueryResult = (usage: AccountUsageInfo) => {
   if (usage.error && usage.source !== 'passive') { queryFeedback.value = null; return }
   if (usage.source === 'passive') {
     const sampledAt = usage.updated_at ? new Date(usage.updated_at) : null
+    if (setupTokenNoLiveQuery) {
+      setupTokenNoLiveQuery = false
+      queryFeedback.value = t('admin.accounts.usageWindow.setupTokenSampleOnly')
+      return
+    }
     queryFeedback.value = sampledAt && Number.isFinite(sampledAt.getTime())
       ? t('admin.accounts.usageWindow.savedSampleAt', { time: sampledAt.toLocaleString() })
       : t('admin.accounts.usageWindow.savedSampleOnly')

@@ -1758,6 +1758,7 @@ export default {
         passiveSampled: 'Passive',
         sampledAt: 'Upstream sample · {time}',
         savedSampleAt: 'Saved sample from {time}, not a live query. New traffic through this account updates the sample.',
+        setupTokenSampleOnly: 'Setup tokens do not support live queries. Quota comes from upstream samples of real requests and updates when traffic passes through this account.',
         savedSampleOnly: 'The server returned saved upstream samples only. Live quota was not obtained.',
         liveQueriedAt: 'Upstream queried · {time} (unchanged usage keeps the same values)',
         noLiveWindows: 'Upstream returned no 5h / 7d quota windows. Previous data was kept.',
