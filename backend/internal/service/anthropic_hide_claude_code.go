@@ -60,6 +60,36 @@ func hideAnthropicClaudeCodeBody(account *Account, body []byte) []byte {
 			}
 		}
 	}
+	return rewriteClaudeCodeSystemIdentity(body)
+}
+
+var claudeCodeIdentityReplacer = strings.NewReplacer(
+	"Anthropic's official CLI for Claude", "the official CLI for Claude",
+	"Anthropic's Claude Agent SDK", "the Claude Agent SDK",
+)
+
+// rewriteClaudeCodeSystemIdentity rewords the fixed Claude Code identity sentences
+// that upstream matches on, in every system text block.
+func rewriteClaudeCodeSystemIdentity(body []byte) []byte {
+	system := gjson.GetBytes(body, "system")
+	switch {
+	case system.IsArray():
+		for i, item := range system.Array() {
+			text := item.Get("text").String()
+			if replaced := claudeCodeIdentityReplacer.Replace(text); replaced != text {
+				if next, err := sjson.SetBytes(body, "system."+strconv.Itoa(i)+".text", replaced); err == nil {
+					body = next
+				}
+			}
+		}
+	case system.Type == gjson.String:
+		text := system.String()
+		if replaced := claudeCodeIdentityReplacer.Replace(text); replaced != text {
+			if next, err := sjson.SetBytes(body, "system", replaced); err == nil {
+				body = next
+			}
+		}
+	}
 	return body
 }
 

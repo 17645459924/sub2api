@@ -36,6 +36,21 @@ func TestHideAnthropicClaudeCodeBodyStringSystem(t *testing.T) {
 	require.False(t, gjson.GetBytes(got, "system").Exists())
 }
 
+func TestHideAnthropicClaudeCodeBodyRewritesIdentity(t *testing.T) {
+	body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.0;"},{"type":"text","text":"You are Claude Code, Anthropic's official CLI for Claude."},{"type":"text","text":"You are a Claude agent, built on Anthropic's Claude Agent SDK."}],"messages":[]}`)
+	got := hideAnthropicClaudeCodeBody(hideClaudeCodeTestAccount(true), body)
+	require.Equal(t, int64(2), gjson.GetBytes(got, "system.#").Int())
+	require.Equal(t, "You are Claude Code, the official CLI for Claude.", gjson.GetBytes(got, "system.0.text").String())
+	require.Equal(t, "You are a Claude agent, built on the Claude Agent SDK.", gjson.GetBytes(got, "system.1.text").String())
+
+	str := []byte(`{"system":"You are Claude Code, Anthropic's official CLI for Claude.\nMore.","messages":[]}`)
+	got = hideAnthropicClaudeCodeBody(hideClaudeCodeTestAccount(true), str)
+	require.Equal(t, "You are Claude Code, the official CLI for Claude.\nMore.", gjson.GetBytes(got, "system").String())
+
+	untouched := hideAnthropicClaudeCodeBody(hideClaudeCodeTestAccount(false), body)
+	require.Equal(t, body, untouched)
+}
+
 func TestHideAnthropicClaudeCodeHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("anthropic-beta", "claude-code-20250219,interleaved-thinking-2025-05-14")
