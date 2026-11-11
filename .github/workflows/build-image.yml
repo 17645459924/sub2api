@@ -3,7 +3,7 @@ name: Build Image
 on:
   workflow_dispatch:
   push:
-    branches: [feat/pricing-purchase-redesign]
+    branches: [feat/pricing-purchase-redesign, merge/upstream-0.2.21]
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            VERSION=0.2.19
+            VERSION=0.2.21
             COMMIT=${{ steps.meta.outputs.sha }}
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org
