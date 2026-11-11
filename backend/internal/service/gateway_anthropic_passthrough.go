@@ -374,6 +374,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	account.ApplyHeaderOverrides(req.Header)
 	filterSonnet55ToolsetBetaHeader(req.Header, body, gjson.GetBytes(body, "model").String())
 
+	s.debugLogGatewaySnapshot("UPSTREAM_FORWARD_PASSTHROUGH", req.Header, body, map[string]string{
+		"url":        req.URL.String(),
+		"token_type": "apikey",
+	})
+
 	return req, body, nil
 }
 
