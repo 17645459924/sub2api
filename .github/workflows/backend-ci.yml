@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
+    # 发布分支由 Build Image 负责构建,不再每次 push 都跑一遍 CI;PR 与其他分支不受影响
+    branches-ignore:
+      - feat/pricing-purchase-redesign
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

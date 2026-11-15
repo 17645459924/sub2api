@@ -2,7 +2,11 @@ name: Security Scan
 
 on:
   push:
+    # 发布分支不再每次 push 都扫描;PR、其他分支和每周一的定时扫描不受影响
+    branches-ignore:
+      - feat/pricing-purchase-redesign
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: '0 3 * * 1'
 
