@@ -614,7 +614,7 @@ export default {
   modelPricing: {
     title: 'Model Pricing',
     ruleTitle: 'Pricing rule',
-    pricingRule: 'Official prices are shown at $1 = {symbol}{rate}. Group price = official price × group rate × top-up rate ({symbol}{recharge} paid per $1 of balance). All prices are per 1M tokens.',
+    pricingRule: 'All model prices are in USD ($). Group price = official USD price × effective group rate, charged to your USD balance. Top-up exchange rates do not change model unit prices. Token prices are per 1M tokens; per-request prices are labeled separately.',
     empty: 'No models available',
     searchPlaceholder: 'Search models',
     loadFailed: 'Failed to load',

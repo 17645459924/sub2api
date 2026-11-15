@@ -14,11 +14,7 @@
         class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
       >
         <span class="font-semibold">{{ t('modelPricing.ruleTitle') }}</span>
-        {{ t('modelPricing.pricingRule', {
-          symbol: currencySymbol,
-          rate: fmtNum(cnyPerUsd),
-          recharge: fmtNum(cnyPerBalanceUsd),
-        }) }}
+        {{ t('modelPricing.pricingRule') }}
       </div>
 
       <div v-if="loading && platforms.length === 0" class="flex justify-center py-20">
@@ -60,6 +56,10 @@
             </button>
           </div>
         </div>
+
+        <p v-if="platformDescription" class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm leading-relaxed text-gray-600 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
+          {{ platformDescription }}
+        </p>
 
         <!-- 分组卡片 -->
         <div v-if="current" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -195,23 +195,18 @@ import userChannelsAPI, {
   type UserSupportedModel,
 } from '@/api/channels'
 import userGroupsAPI from '@/api/groups'
-import { paymentAPI } from '@/api/payment'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { resolveIntervalPrices } from '@/utils/pricing'
 import { platformLabel } from '@/utils/platformColors'
+import { claudeOfficialGroup, claudeOfficialModels } from '@/utils/claudeOfficialPricing'
 import {
   discountRatio as calcDiscountRatio,
   groupPrice,
-  normalizePricingRates,
-  type PricingRates,
 } from '@/utils/modelPricingMath'
 
-// 官方价展示汇率取后台「支付设置 → 订阅 USD→CNY 汇率」;每 $1 余额实付人民币 = 1 / 「余额充值倍率」;未配置均按 1 计。
-const pricingRates = ref<PricingRates>({ cnyPerUsd: 1, cnyPerBalanceUsd: 1 })
-const cnyPerUsd = computed(() => pricingRates.value.cnyPerUsd)
-const cnyPerBalanceUsd = computed(() => pricingRates.value.cnyPerBalanceUsd)
-const currencySymbol = '¥'
+// 模型价格统一按美元余额计价,不混入人民币充值汇率。
+const currencySymbol = '$'
 const PER_MILLION = 1_000_000
 
 type PriceKey = 'input' | 'output' | 'cacheWrite' | 'cacheRead'
@@ -249,19 +244,35 @@ const platforms = computed<PlatformBucket[]>(() => {
       for (const m of sec.supported_models) if (!b.models.some((x) => x.name === m.name)) b.models.push(m)
     }
   }
+  const claude = map.get('anthropic')
+  if (!claude) {
+    map.set('anthropic', {
+      platform: 'anthropic',
+      groups: [claudeOfficialGroup],
+      models: [...claudeOfficialModels],
+    })
+  } else {
+    for (const m of claudeOfficialModels) {
+      if (!claude.models.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) claude.models.push(m)
+    }
+  }
   return [...map.values()].filter((b) => b.groups.length > 0)
 })
 
 const current = computed(() => platforms.value.find((p) => p.platform === activePlatform.value) ?? null)
 const activeGroup = computed(() => current.value?.groups.find((g) => g.id === activeGroupId.value) ?? null)
+const platformDescription = computed(() => [...new Set(channels.value
+  .filter((ch) => ch.platforms.some((section) => section.platform === activePlatform.value))
+  .map((ch) => ch.description.trim())
+  .filter(Boolean))].join(' '))
 
 function rateOf(g: UserAvailableGroup): number {
   return userRates.value[g.id] ?? g.rate_multiplier ?? 1
 }
 
-// 实付价 / 官方展示价:分组倍率 × 每 $1 余额的实付人民币 ÷ 官方展示汇率
+// 同币种比较:分组美元价 / 官方美元价 = 生效分组倍率。
 function discountRatio(g: UserAvailableGroup): number {
-  return calcDiscountRatio(rateOf(g), pricingRates.value)
+  return calcDiscountRatio(rateOf(g))
 }
 
 function selectPlatform(p: string) {
@@ -325,13 +336,13 @@ const rows = computed<Row[]>(() => {
     }
     const price = {} as Prices
     for (const k of priceKeys) {
-      price[k] = official[k] == null ? null : groupPrice(official[k]! / cnyPerUsd.value, rate, pricingRates.value)
+      price[k] = official[k] == null ? null : groupPrice(official[k]!, rate)
     }
     const per = src.per_request_price ?? p.per_request_price
     out.push({
       name: m.name,
       perRequest:
-        p.billing_mode === 'per_request' && per != null ? groupPrice(per, rate, pricingRates.value) : null,
+        p.billing_mode === 'per_request' && per != null ? groupPrice(per, rate) : null,
       price,
       official,
       saving: ratio < 1 ? Math.round((1 - ratio) * 100) : 0,
@@ -341,7 +352,7 @@ const rows = computed<Row[]>(() => {
 })
 
 function usd(v: number | null | undefined): number | null {
-  return v == null ? null : v * PER_MILLION * cnyPerUsd.value
+  return v == null ? null : v * PER_MILLION
 }
 
 function fmtNum(n: number): string {
@@ -351,7 +362,10 @@ function fmtNum(n: number): string {
 function money(v: number | null): string {
   if (v == null) return '-'
   const digits = v !== 0 && Math.abs(v) < 0.01 ? 4 : 2
-  return `${currencySymbol}${v.toFixed(digits)}`
+  const fixed = v.toFixed(digits)
+  const exact = Number(v.toFixed(4))
+  const text = digits === 2 && exact !== Number(fixed) ? String(exact) : fixed
+  return `${currencySymbol}${text}`
 }
 
 function discountLabel(rate: number): string {
@@ -362,18 +376,12 @@ function discountLabel(rate: number): string {
 async function load() {
   loading.value = true
   try {
-    const [list, rates, rate] = await Promise.all([
+    const [list, rates] = await Promise.all([
       userChannelsAPI.getAvailable(),
       userGroupsAPI.getUserGroupRates(),
-      // 专属倍率或汇率取不到时不能用默认值展示价格(会把错价展示给用户),让整体加载失败并提示重试
-      paymentAPI.getCheckoutInfo().then((res) => res.data),
     ])
     channels.value = list
     userRates.value = rates
-    pricingRates.value = normalizePricingRates(
-      rate.subscription_usd_to_cny_rate,
-      rate.balance_recharge_multiplier,
-    )
     if (import.meta.env.DEV && route.query.mock === '1') {
       channels.value = (await import('@/dev/previewMock')).mockChannels
     }

@@ -33,7 +33,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key }),
+    useI18n: () => ({ t: (key: string) => key, locale: { value: 'zh' } }),
   }
 })
 
@@ -105,6 +105,17 @@ describe('HomeView compact mode', () => {
 
     expect(wrapper.get('iframe').attributes('src')).toBe('https://example.com/home')
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
+  })
+
+  it('dispatches the v2 and v1 landing markers to different pages', async () => {
+    const v1 = mountHome({ home_content: 'tl:landing' })
+    expect(v1.find('.liberty').exists()).toBe(true)
+    expect(v1.find('.lv').exists()).toBe(false)
+
+    const v2 = mountHome({ home_content: ' tl:landing-v2 ' })
+    await vi.waitFor(() => expect(v2.find('.lv').exists()).toBe(true))
+    expect(v2.find('.liberty').exists()).toBe(false)
+    expect(v2.find('iframe').exists()).toBe(false)
   })
 
   it('treats whitespace-only custom content as empty and selects compact mode', () => {

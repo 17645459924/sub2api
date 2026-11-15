@@ -619,7 +619,7 @@ export default {
   modelPricing: {
     title: '模型价格',
     ruleTitle: '计价规则',
-    pricingRule: '官方价格按 $1 = {symbol}{rate} 折算,分组价格 = 官方价格 × 分组倍率 × 充值汇率(每 $1 余额实付 {symbol}{recharge})。价格均为每 1M tokens。',
+    pricingRule: '模型单价统一以美元($)计价。分组价格 = 官方美元价格 × 生效分组倍率,表示美元余额扣费;充值汇率不参与模型单价计算。Token 价格均为每 1M tokens,按次计费另行标注。',
     empty: '暂无可用模型',
     searchPlaceholder: '搜索模型',
     loadFailed: '加载失败',

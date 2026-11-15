@@ -595,6 +595,7 @@ import {
   resolveLandingApiBase,
   LANDING_DOC_PATH,
 } from '@/utils/tlLanding'
+import { buildLandingCode } from '@/utils/landingCode'
 import type { GroupPlatform } from '@/types'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import HeroGlobe from '@/components/common/HeroGlobe.vue'
@@ -956,44 +957,15 @@ const codeTools = [
   { id: 'codex' as const, label: 'Codex', icon: '⌘' },
 ]
 const activeCodeTool = computed(() => codeTools.find((tool) => tool.id === codeTool.value)!)
-const code = computed(() => {
-  const root = apiBase.value.replace(/\/v1$/, '')
-  if (codeTool.value === 'curl')
-    return [
-      '# ' + c.value.codeComment,
-      `curl ${apiBase.value}/responses \\`,
-      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
-      '  -H "Content-Type: application/json" \\',
-      '  -d \'{"model": "YOUR_ENABLED_MODEL", "input": "Hello, possibility."}\'',
-      '',
-      '# ' + c.value.curlHint,
-    ].join('\n')
-  if (codeTool.value === 'claude')
-    return [
-      '# ' + c.value.codeComment,
-      'npm install -g @anthropic-ai/claude-code',
-      '',
-      `export ANTHROPIC_BASE_URL=${JSON.stringify(root)}`,
-      'export ANTHROPIC_AUTH_TOKEN="YOUR_API_KEY"',
-      'export ANTHROPIC_MODEL="YOUR_ENABLED_MODEL"',
-      '',
-      'claude',
-    ].join('\n')
-  return [
-    '# ~/.codex/config.toml',
-    'model_provider = "custom_gateway"',
-    'model = "YOUR_ENABLED_MODEL"',
-    '',
-    '[model_providers.custom_gateway]',
-    `name = ${JSON.stringify(siteName.value)}`,
-    `base_url = ${JSON.stringify(apiBase.value)}`,
-    'env_key = "CUSTOM_API_KEY"',
-    'wire_api = "responses"',
-    '',
-    '# export CUSTOM_API_KEY="YOUR_API_KEY"',
-    '# codex',
-  ].join('\n')
-})
+const code = computed(() =>
+  buildLandingCode({
+    tool: codeTool.value,
+    apiBase: apiBase.value,
+    siteName: siteName.value,
+    comment: c.value.codeComment,
+    curlHint: c.value.curlHint,
+  }),
+)
 async function copyCode() {
   try {
     await navigator.clipboard.writeText(code.value)

@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string
+  readonly VITE_LANDING_INTRO_VIDEO_URL?: string
+  readonly VITE_LANDING_INTRO_VIDEO_POSTER?: string
   readonly BASE_URL: string
 }
 

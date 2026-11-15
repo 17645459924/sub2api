@@ -1,5 +1,6 @@
 <template>
-  <TokenLibertyLanding v-if="isTlLanding" />
+  <LandingV2 v-if="isTlLandingV2" />
+  <TokenLibertyLanding v-else-if="isTlLanding" />
 
   <!-- Custom Home Content: Full Page Mode -->
   <div v-else-if="hasHomeContent" class="min-h-screen">
@@ -487,16 +488,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
-import { isTlLandingContent } from '@/utils/tlLanding'
+import { isTlLandingContent, isTlLandingV2Content } from '@/utils/tlLanding'
 import { DOC_PATH } from '@/utils/docPath'
 import TokenLibertyLanding from './TokenLibertyLanding.vue'
+
+const LandingV2 = defineAsyncComponent(() => import('./landing-v2/LandingV2.vue'))
 
 const { t } = useI18n()
 
@@ -509,10 +512,9 @@ const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docPath = DOC_PATH
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
-const isTlLanding = computed(() =>
-  (import.meta.env.DEV && import.meta.env.VITE_DEV_LANDING_PREVIEW === 'true') ||
-  isTlLandingContent(homeContent.value),
-)
+const devLandingPreview = import.meta.env.DEV ? import.meta.env.VITE_DEV_LANDING_PREVIEW : undefined
+const isTlLandingV2 = computed(() => devLandingPreview === 'v2' || isTlLandingV2Content(homeContent.value))
+const isTlLanding = computed(() => devLandingPreview === 'true' || isTlLandingContent(homeContent.value))
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))

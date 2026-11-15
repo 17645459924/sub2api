@@ -1,9 +1,14 @@
 import { sanitizeUrl } from './url'
 
 export const TL_LANDING_MARKER = 'tl:landing'
+export const TL_LANDING_V2_MARKER = 'tl:landing-v2'
 
 export function isTlLandingContent(content: string | null | undefined): boolean {
   return (content ?? '').trim() === TL_LANDING_MARKER
+}
+
+export function isTlLandingV2Content(content: string | null | undefined): boolean {
+  return (content ?? '').trim() === TL_LANDING_V2_MARKER
 }
 
 export interface ShowcaseImage {
